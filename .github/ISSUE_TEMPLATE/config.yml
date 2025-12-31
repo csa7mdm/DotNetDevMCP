@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussions
+    url: https://github.com/csa7mdm/DotNetDevMCP/discussions
+    about: Ask questions, share ideas, and discuss DotNetDevMCP with the community
+  - name: 📚 Documentation
+    url: https://github.com/csa7mdm/DotNetDevMCP/blob/main/README.md
+    about: Read the comprehensive documentation and guides
+  - name: 🔍 Code Examples
+    url: https://github.com/csa7mdm/DotNetDevMCP/tree/main/samples
+    about: Explore sample applications and usage examples
+  - name: 🐛 Security Vulnerability
+    url: https://github.com/csa7mdm/DotNetDevMCP/security/advisories/new
+    about: Report a security vulnerability privately

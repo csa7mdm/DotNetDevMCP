@@ -1,0 +1,60 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Source code
+*.cs     text diff=csharp
+*.csx    text diff=csharp
+*.vb     text
+*.vbx    text
+*.xaml   text
+*.xml    text
+*.json   text
+*.yml    text
+*.yaml   text
+
+# Scripts
+*.sh     text eol=lf
+*.ps1    text eol=crlf
+*.cmd    text eol=crlf
+*.bat    text eol=crlf
+
+# Documentation
+*.md     text diff=markdown
+*.txt    text
+*.adoc   text
+*.textile text
+*.mustache text
+*.csv    text
+*.tab    text
+*.tsv    text
+*.sql    text
+
+# Graphics
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.svg    text
+
+# Archives
+*.7z     binary
+*.gz     binary
+*.tar    binary
+*.zip    binary
+
+# Executables
+*.exe    binary
+*.dll    binary
+*.so     binary
+*.dylib  binary
+
+# NuGet
+*.nupkg  binary
+
+# MSBuild
+*.csproj text merge=union
+*.vbproj text merge=union
+*.fsproj text merge=union
+*.dbproj text merge=union
+*.sln    text merge=union eol=crlf

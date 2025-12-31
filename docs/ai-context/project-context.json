@@ -1,0 +1,348 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "0.1.0-alpha",
+  "lastUpdated": "2025-12-30",
+  "project": {
+    "name": "DotNetDevMCP",
+    "description": "The Ultimate .NET Development MCP Server - One Tool to Rule Them All",
+    "type": "MCP Server",
+    "targetFramework": "net9.0",
+    "language": "C#",
+    "license": "MIT",
+    "repository": "https://github.com/YOUR_USERNAME/DotNetDevMCP"
+  },
+  "philosophy": {
+    "vision": "A comprehensive one-stop shop for .NET developers combining deep code intelligence with advanced orchestration capabilities",
+    "principles": [
+      "Performance optimization through concurrent operations",
+      "Context efficiency for AI consumption",
+      "Test-Driven Development (TDD)",
+      "Comprehensive documentation",
+      "Simplicity over complexity",
+      "Extensibility and modularity"
+    ],
+    "targetUsers": [
+      "Solo developers",
+      "Development teams",
+      "AI-assisted development workflows"
+    ],
+    "targetProjects": [
+      "Greenfield .NET projects",
+      "Legacy codebase modernization",
+      "All .NET stacks (ASP.NET Core, Blazor, MAUI, etc.)"
+    ]
+  },
+  "architecture": {
+    "style": "Modular layered architecture",
+    "patterns": [
+      "Service-oriented",
+      "Plugin architecture",
+      "Concurrent operations with async/await",
+      "MCP protocol integration"
+    ],
+    "layers": {
+      "core": {
+        "name": "DotNetDevMCP.Core",
+        "purpose": "Core abstractions, interfaces, and shared models",
+        "dependencies": []
+      },
+      "codeIntelligence": {
+        "name": "DotNetDevMCP.CodeIntelligence",
+        "purpose": "Roslyn-based analysis, integrated from SharpTools",
+        "dependencies": ["Core", "Roslyn", "Microsoft.CodeAnalysis"],
+        "keyCapabilities": [
+          "Symbol navigation",
+          "Type hierarchy",
+          "Reference finding",
+          "Code modifications"
+        ]
+      },
+      "sourceControl": {
+        "name": "DotNetDevMCP.SourceControl",
+        "purpose": "Advanced Git integration (Level C: Deep)",
+        "dependencies": ["Core", "LibGit2Sharp"],
+        "keyCapabilities": [
+          "Merge analysis",
+          "Code review automation",
+          "Blame integration",
+          "Conflict resolution",
+          "Branch strategy",
+          "Commit history analysis"
+        ]
+      },
+      "testing": {
+        "name": "DotNetDevMCP.Testing",
+        "purpose": "Test orchestration and parallel execution",
+        "dependencies": ["Core", "Build"],
+        "keyCapabilities": [
+          "Test discovery (xUnit, NUnit, MSTest)",
+          "Parallel execution",
+          "Coverage analysis",
+          "Test result aggregation"
+        ]
+      },
+      "build": {
+        "name": "DotNetDevMCP.Build",
+        "purpose": "MSBuild integration and build intelligence",
+        "dependencies": ["Core", "Microsoft.Build"],
+        "keyCapabilities": [
+          "Build diagnostics",
+          "Pipeline analysis",
+          "Dependency graph",
+          "Build optimization"
+        ]
+      },
+      "monitoring": {
+        "name": "DotNetDevMCP.Monitoring",
+        "purpose": "Log analysis and performance profiling",
+        "dependencies": ["Core"],
+        "keyCapabilities": [
+          "Log pattern detection",
+          "Performance profiling",
+          "Error aggregation",
+          "Metrics analysis"
+        ]
+      },
+      "documentation": {
+        "name": "DotNetDevMCP.Documentation",
+        "purpose": "AI-friendly documentation generation",
+        "dependencies": ["Core", "CodeIntelligence"],
+        "keyCapabilities": [
+          "XML doc extraction",
+          "Markdown generation",
+          "Architecture diagrams (Mermaid)",
+          "Context file updates"
+        ]
+      },
+      "orchestration": {
+        "name": "DotNetDevMCP.Orchestration",
+        "purpose": "Concurrent operations and workflow management",
+        "dependencies": ["Core", "All other layers"],
+        "keyCapabilities": [
+          "Parallel task execution",
+          "Multi-solution operations",
+          "Agent coordination",
+          "Resource optimization"
+        ]
+      },
+      "server": {
+        "name": "DotNetDevMCP.Server",
+        "purpose": "MCP protocol server implementation",
+        "dependencies": ["All layers"],
+        "protocols": ["stdio", "SSE (HTTP)"],
+        "keyCapabilities": [
+          "MCP tool exposure",
+          "Request routing",
+          "Session management"
+        ]
+      }
+    }
+  },
+  "keyTechnologies": {
+    "runtime": ".NET 9.0",
+    "analysisEngine": "Roslyn (Microsoft.CodeAnalysis)",
+    "buildSystem": "MSBuild",
+    "sourceControl": "LibGit2Sharp",
+    "testing": ["xUnit", "NUnit", "MSTest"],
+    "protocol": "Model Context Protocol (MCP)",
+    "serialization": "System.Text.Json",
+    "logging": "Microsoft.Extensions.Logging"
+  },
+  "designDecisions": [
+    {
+      "id": "ADR-001",
+      "title": "Fork SharpTools instead of pluggable integration",
+      "status": "Accepted",
+      "date": "2025-12-30",
+      "rationale": "Unified codebase allows optimization across features, simpler deployment, and complete control over the stack",
+      "consequences": [
+        "Single MCP server to maintain",
+        "Must credit SharpTools appropriately",
+        "Can contribute improvements upstream if desired"
+      ]
+    },
+    {
+      "id": "ADR-002",
+      "title": "Prioritize concurrent operations",
+      "status": "Accepted",
+      "date": "2025-12-30",
+      "rationale": "User's primary pain point is performance; async/parallel operations across tests, builds, and analysis will significantly improve developer experience",
+      "consequences": [
+        "Need robust error handling for parallel operations",
+        "Resource management becomes critical",
+        "Complexity in orchestration layer"
+      ]
+    },
+    {
+      "id": "ADR-003",
+      "title": "Deep Git integration (Level C)",
+      "status": "Accepted",
+      "date": "2025-12-30",
+      "rationale": "Full source control awareness enables advanced workflows like automated code review, merge conflict analysis, and branch strategy recommendations",
+      "consequences": [
+        "Dependency on LibGit2Sharp",
+        "Increased complexity",
+        "Rich feature set for Git-centric workflows"
+      ]
+    },
+    {
+      "id": "ADR-004",
+      "title": "Test-Driven Development approach",
+      "status": "Accepted",
+      "date": "2025-12-30",
+      "rationale": "User requirement for TDD; ensures code quality and serves as living documentation",
+      "consequences": [
+        "Tests written before implementation",
+        "Higher initial development time",
+        "Better long-term maintainability"
+      ]
+    },
+    {
+      "id": "ADR-005",
+      "title": "AI-friendly documentation as first-class citizen",
+      "status": "Accepted",
+      "date": "2025-12-30",
+      "rationale": "Machine-readable context files enable AI agents to understand the project holistically, improving AI-assisted development",
+      "consequences": [
+        "Documentation must be updated with every change",
+        "project-context.json becomes critical artifact",
+        "Enables better AI comprehension"
+      ]
+    }
+  ],
+  "developmentWorkflow": {
+    "methodology": "Test-Driven Development (TDD)",
+    "branchStrategy": "GitFlow (main, develop, feature/*, hotfix/*)",
+    "testingStrategy": {
+      "unitTests": "xUnit (preferred)",
+      "integrationTests": "Required for all MCP tools",
+      "coverage": "Minimum 80% target"
+    },
+    "documentationRequirements": [
+      "Update ADRs for architectural decisions",
+      "Update project-context.json with changes",
+      "Update architecture diagrams",
+      "XML doc comments for public APIs",
+      "Usage examples in samples/"
+    ]
+  },
+  "integrationPoints": {
+    "mcpProtocol": {
+      "version": "1.0",
+      "transports": ["stdio", "SSE"],
+      "authentication": "None (local trust model)"
+    },
+    "externalTools": [
+      {
+        "name": "dotnet CLI",
+        "purpose": "Build, test, publish operations",
+        "required": true
+      },
+      {
+        "name": "git",
+        "purpose": "Source control operations",
+        "required": true
+      },
+      {
+        "name": "MSBuild",
+        "purpose": "Advanced build analysis",
+        "required": false
+      }
+    ],
+    "suggestedMCPs": [
+      {
+        "name": "@modelcontextprotocol/server-filesystem",
+        "purpose": "Enhanced file operations",
+        "integration": "Complementary"
+      },
+      {
+        "name": "@modelcontextprotocol/server-git",
+        "purpose": "Basic Git operations (we extend this)",
+        "integration": "Optional fallback"
+      }
+    ]
+  },
+  "currentState": {
+    "phase": "Initial Architecture",
+    "completedMilestones": [
+      "Project structure created",
+      "Documentation framework established",
+      "SharpTools source obtained"
+    ],
+    "nextMilestones": [
+      "Integrate SharpTools codebase",
+      "Set up TDD framework",
+      "Implement concurrent operations architecture",
+      "Build advanced Git integration"
+    ]
+  },
+  "performanceGoals": {
+    "codebaseSize": "Dynamic scaling (handle solutions from 10 to 10,000+ files)",
+    "analysisMode": "User-configurable (real-time or on-demand)",
+    "concurrency": "Maximize parallel operations where safe",
+    "tokenEfficiency": "Minimize context size for AI consumption",
+    "responseTime": "Sub-second for most operations, parallel execution for batch operations"
+  },
+  "conventions": {
+    "naming": {
+      "projects": "DotNetDevMCP.[Layer]",
+      "namespaces": "DotNetDevMCP.[Layer].[Feature]",
+      "interfaces": "I[Name]",
+      "abstractClasses": "[Name]Base",
+      "services": "[Name]Service"
+    },
+    "codeStyle": {
+      "guide": ".editorconfig in root",
+      "indentation": "4 spaces",
+      "lineLength": "120 characters max",
+      "nullability": "Enabled"
+    },
+    "testing": {
+      "naming": "[ClassUnderTest]Tests",
+      "organization": "Mirror src/ structure in tests/",
+      "testMethod": "[MethodName]_[Scenario]_[ExpectedBehavior]"
+    }
+  },
+  "knownLimitations": [
+    "Initial version focuses on C# (other .NET languages like F# may have limited support)",
+    "Git integration requires LibGit2Sharp compatibility",
+    "MSBuild integration may require Visual Studio Build Tools on some platforms"
+  ],
+  "roadmap": {
+    "v0.1.0-alpha": {
+      "target": "2025-Q1",
+      "features": [
+        "Core architecture",
+        "SharpTools integration",
+        "Basic concurrent operations",
+        "Initial Git integration"
+      ]
+    },
+    "v0.2.0-alpha": {
+      "target": "2025-Q2",
+      "features": [
+        "Testing orchestration",
+        "Build pipeline integration",
+        "Advanced Git features",
+        "Documentation generation"
+      ]
+    },
+    "v1.0.0": {
+      "target": "2025-Q3",
+      "features": [
+        "Production-ready",
+        "Full feature set",
+        "Comprehensive documentation",
+        "Performance optimizations"
+      ]
+    }
+  },
+  "metadata": {
+    "aiConsumption": {
+      "purpose": "This file provides comprehensive project context for AI agents",
+      "updateFrequency": "On every significant architectural change",
+      "readBy": "AI agents, developers, documentation tools",
+      "format": "JSON for machine readability, verbose for human understanding"
+    }
+  }
+}
