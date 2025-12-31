@@ -19,9 +19,11 @@ Please do not report security vulnerabilities through public GitHub issues.
 
 ### 2. Report Privately
 
-Instead, please report security vulnerabilities by emailing:
+Instead, please report security vulnerabilities using GitHub Security Advisories:
 
-**Email**: [your.email@example.com](mailto:your.email@example.com)
+**Report**: [Create a Security Advisory](https://github.com/csa7mdm/DotNetDevMCP/security/advisories/new)
+
+Alternatively, you can email the maintainer through your GitHub account or open a private issue.
 
 Include the following information:
 - Description of the vulnerability

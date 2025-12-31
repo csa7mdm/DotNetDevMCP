@@ -4,12 +4,12 @@
 
 <div align="center">
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![.NET](https://img.shields.io/badge/.NET-9.0-purple.svg)
-![Status](https://img.shields.io/badge/status-active%20development-green.svg)
-![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)
-![Tests](https://img.shields.io/badge/tests-95.5%25%20passing-success.svg)
-![Performance](https://img.shields.io/badge/performance-50--80%25%20faster-orange.svg)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![.NET](https://img.shields.io/badge/.NET-9.0-purple.svg)](https://dotnet.microsoft.com/download/dotnet/9.0)
+[![Build Status](https://github.com/csa7mdm/DotNetDevMCP/actions/workflows/build.yml/badge.svg)](https://github.com/csa7mdm/DotNetDevMCP/actions/workflows/build.yml)
+[![CodeQL](https://github.com/csa7mdm/DotNetDevMCP/actions/workflows/codeql.yml/badge.svg)](https://github.com/csa7mdm/DotNetDevMCP/actions/workflows/codeql.yml)
+[![Tests](https://img.shields.io/badge/tests-95.5%25%20passing-success.svg)](#-testing)
+[![Performance](https://img.shields.io/badge/performance-50--80%25%20faster-orange.svg)](#-performance)
 
 [Features](#-features) •
 [Quick Start](#-quick-start) •

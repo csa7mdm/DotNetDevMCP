@@ -1396,7 +1396,7 @@ SOFTWARE.
 - **GitHub Repository**: https://github.com/csa7mdm/DotNetDevMCP
 - **Issue Tracker**: https://github.com/csa7mdm/DotNetDevMCP/issues
 - **Discussions**: https://github.com/csa7mdm/DotNetDevMCP/discussions
-- **Email**: your.email@example.com
+- **Security**: [Report vulnerabilities](https://github.com/csa7mdm/DotNetDevMCP/security/advisories/new)
 
 ---
 
