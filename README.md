@@ -120,12 +120,53 @@
 - Source resolution (local files, SourceLink, PDBs, decompilation)
 - Token-efficient design (~10% token savings)
 
-### 🔮 Future Features (Roadmap)
+### 🌐 MCP Server (100% Complete)
 
-- **MCP Server**: stdio and SSE transports
-- **Source Control**: Advanced Git integration (merge analysis, code review)
-- **Monitoring**: Performance profiling and log analysis
-- **Documentation**: Auto-generate architecture diagrams and context files
+**Production-ready Model Context Protocol servers with multiple transports**
+
+- **Stdio Transport** (`DotNetDevMCP.Server.Stdio`):
+  - Standard input/output communication
+  - Perfect for CLI integration
+  - Command-line configuration (log level, solution loading, Git control)
+  - Serilog-based structured logging
+
+- **SSE/HTTP Transport** (`DotNetDevMCP.Server.Sse`):
+  - Server-Sent Events over HTTP
+  - Web-based integration
+  - Configurable port and logging
+  - ASP.NET Core middleware with detailed request logging
+
+**Features**:
+- Auto-load solutions on startup
+- Configurable build configuration (Debug/Release)
+- Optional Git integration (can be disabled)
+- Comprehensive logging (console + file)
+
+### 🔧 Source Control (Advanced Git Integration)
+
+**Professional Git operations with merge analysis and code review**
+
+- **Basic Operations**:
+  - Repository detection and validation
+  - Branch management (create, switch, track)
+  - Commit operations with staging
+  - Diff generation between commits
+  - Revert with undo branch creation
+
+- **Advanced Features** (NEW):
+  - **Merge Analysis**: Analyze merge feasibility and detect potential conflicts
+    - Finds merge base between branches
+    - Identifies files modified in both branches
+    - Returns detailed conflict analysis and summary
+
+  - **Code Review**: Comprehensive change statistics between branches
+    - Files changed count
+    - Lines added/removed
+    - Net change calculation
+    - Detailed file-by-file breakdown
+    - Summary report generation
+
+**Integration**: Powered by LibGit2Sharp for reliable Git operations
 
 ---
 
