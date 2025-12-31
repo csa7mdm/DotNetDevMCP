@@ -48,12 +48,9 @@ public class ResourceManager : IResourceManager, IDisposable
                     _semaphore = new SemaphoreSlim(value, value);
                     _maxConcurrency = value;
 
-                    // Dispose old semaphore after a delay to allow current operations to complete
-                    Task.Run(async () =>
-                    {
-                        await Task.Delay(1000);
-                        oldSemaphore.Dispose();
-                    });
+                    // Dispose old semaphore immediately - operations already holding the semaphore
+                    // will complete normally, and new operations will use the new semaphore
+                    oldSemaphore.Dispose();
                 }
             }
         }
