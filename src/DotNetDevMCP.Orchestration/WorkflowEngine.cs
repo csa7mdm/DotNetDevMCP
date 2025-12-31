@@ -173,6 +173,12 @@ public class WorkflowEngine : IWorkflowEngine
                 Error: result.ErrorMessage,
                 Duration: stepwatch.Elapsed);
         }
+        catch (OperationCanceledException)
+        {
+            // Allow cancellation to propagate
+            stepwatch.Stop();
+            throw;
+        }
         catch (Exception ex)
         {
             stepwatch.Stop();

@@ -92,6 +92,11 @@ public class ConcurrentExecutor : IConcurrentExecutor
 
                         ReportProgress(progress, totalOperations, completedCount, failedCount);
                     }
+                    catch (OperationCanceledException)
+                    {
+                        // Always propagate cancellation
+                        throw;
+                    }
                     catch (Exception ex)
                     {
                         var error = new ExecutionError(
