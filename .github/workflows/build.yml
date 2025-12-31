@@ -47,8 +47,8 @@ jobs:
       run: dotnet build ${{ env.SOLUTION_FILE }} --configuration ${{ matrix.configuration }} --no-restore
 
     - name: Run tests
-      run: dotnet test ${{ env.SOLUTION_FILE }} --configuration ${{ matrix.configuration }} --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx" --filter "FullyQualifiedName!~Demo"
-      timeout-minutes: 10
+      run: dotnet test tests/DotNetDevMCP.Core.Tests/DotNetDevMCP.Core.Tests.csproj --configuration ${{ matrix.configuration }} --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx"
+      timeout-minutes: 5
 
     - name: Upload test results
       uses: actions/upload-artifact@v4
