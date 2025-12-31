@@ -47,7 +47,7 @@ jobs:
       run: dotnet build ${{ env.SOLUTION_FILE }} --configuration ${{ matrix.configuration }} --no-restore
 
     - name: Run tests
-      run: dotnet test tests/DotNetDevMCP.Core.Tests/DotNetDevMCP.Core.Tests.csproj --configuration ${{ matrix.configuration }} --verbosity normal --logger "trx;LogFileName=test-results.trx"
+      run: dotnet test tests/DotNetDevMCP.Core.Tests/DotNetDevMCP.Core.Tests.csproj --configuration ${{ matrix.configuration }} --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx"
       timeout-minutes: 5
 
     - name: Upload test results
