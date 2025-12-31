@@ -326,4 +326,204 @@ public class GitService : IGitService {
             }
         }, cancellationToken);
     }
+
+    /// <summary>
+    /// Analyzes if two branches can be merged and identifies conflicts
+    /// </summary>
+    public async Task<MergeAnalysisResult> AnalyzeMergeAsync(string solutionPath, string sourceBranch, string targetBranch,
+        CancellationToken cancellationToken = default) {
+        return await Task.Run(() => {
+            try {
+                var repositoryPath = GetRepositoryPath(solutionPath);
+                if (repositoryPath == null) {
+                    _logger.LogWarning("No Git repository found for solution at {SolutionPath}", solutionPath);
+                    return new MergeAnalysisResult(
+                        CanMerge: false,
+                        HasConflicts: false,
+                        ConflictingFiles: Array.Empty<string>(),
+                        AnalysisSummary: "Repository not found"
+                    );
+                }
+
+                using var repository = new Repository(repositoryPath);
+
+                // Get the branches
+                var source = repository.Branches[sourceBranch];
+                var target = repository.Branches[targetBranch];
+
+                if (source == null || target == null) {
+                    return new MergeAnalysisResult(
+                        CanMerge: false,
+                        HasConflicts: false,
+                        ConflictingFiles: Array.Empty<string>(),
+                        AnalysisSummary: $"Branch not found: {(source == null ? sourceBranch : targetBranch)}"
+                    );
+                }
+
+                // Analyze potential conflicts by finding files modified in both branches
+                var conflictingFiles = new List<string>();
+                bool canMerge = true;
+
+                try {
+                    // Find merge base
+                    var mergeBase = repository.ObjectDatabase.FindMergeBase(source.Tip, target.Tip);
+
+                    if (mergeBase != null) {
+                        // Get changes in source branch since merge base
+                        var sourceChanges = repository.Diff.Compare<TreeChanges>(
+                            mergeBase.Tree,
+                            source.Tip.Tree
+                        );
+
+                        // Get changes in target branch since merge base
+                        var targetChanges = repository.Diff.Compare<TreeChanges>(
+                            mergeBase.Tree,
+                            target.Tip.Tree
+                        );
+
+                        // Files modified in both branches are potential conflicts
+                        var sourcePaths = new HashSet<string>(sourceChanges.Select(c => c.Path));
+                        var targetPaths = new HashSet<string>(targetChanges.Select(c => c.Path));
+                        conflictingFiles.AddRange(sourcePaths.Intersect(targetPaths));
+                    }
+                } catch (Exception ex) {
+                    _logger.LogDebug("Error detecting potential conflicts: {Error}", ex.Message);
+                    canMerge = false;
+                }
+
+                var hasConflicts = conflictingFiles.Count > 0;
+                var summary = new StringBuilder();
+                summary.AppendLine($"Merge Analysis: {sourceBranch} -> {targetBranch}");
+                summary.AppendLine($"Can merge: {canMerge}");
+                summary.AppendLine($"Analysis: {(hasConflicts ? "Potential conflicts detected" : "No conflicts detected")}");
+
+                if (hasConflicts) {
+                    summary.AppendLine($"Potential conflicts in {conflictingFiles.Count} files:");
+                    foreach (var file in conflictingFiles.Take(10)) {
+                        summary.AppendLine($"  - {file}");
+                    }
+                    if (conflictingFiles.Count > 10) {
+                        summary.AppendLine($"  ... and {conflictingFiles.Count - 10} more");
+                    }
+                }
+
+                _logger.LogInformation("Merge analysis complete: {CanMerge}, {ConflictCount} potential conflicts",
+                    canMerge, conflictingFiles.Count);
+
+                return new MergeAnalysisResult(
+                    CanMerge: canMerge,
+                    HasConflicts: hasConflicts,
+                    ConflictingFiles: conflictingFiles,
+                    AnalysisSummary: summary.ToString()
+                );
+            } catch (Exception ex) {
+                _logger.LogError(ex, "Error analyzing merge for solution at {SolutionPath}", solutionPath);
+                return new MergeAnalysisResult(
+                    CanMerge: false,
+                    HasConflicts: false,
+                    ConflictingFiles: Array.Empty<string>(),
+                    AnalysisSummary: $"Error: {ex.Message}"
+                );
+            }
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Reviews changes between two branches and provides statistics
+    /// </summary>
+    public async Task<CodeReviewResult> ReviewChangesAsync(string solutionPath, string baseBranch, string compareBranch,
+        CancellationToken cancellationToken = default) {
+        return await Task.Run(() => {
+            try {
+                var repositoryPath = GetRepositoryPath(solutionPath);
+                if (repositoryPath == null) {
+                    _logger.LogWarning("No Git repository found for solution at {SolutionPath}", solutionPath);
+                    return new CodeReviewResult(
+                        FilesChanged: 0,
+                        LinesAdded: 0,
+                        LinesRemoved: 0,
+                        ModifiedFiles: Array.Empty<string>(),
+                        ReviewSummary: "Repository not found"
+                    );
+                }
+
+                using var repository = new Repository(repositoryPath);
+
+                // Get the branches
+                var baseBr = repository.Branches[baseBranch];
+                var compareBr = repository.Branches[compareBranch];
+
+                if (baseBr == null || compareBr == null) {
+                    return new CodeReviewResult(
+                        FilesChanged: 0,
+                        LinesAdded: 0,
+                        LinesRemoved: 0,
+                        ModifiedFiles: Array.Empty<string>(),
+                        ReviewSummary: $"Branch not found: {(baseBr == null ? baseBranch : compareBranch)}"
+                    );
+                }
+
+                // Get changes between branches
+                var comparison = repository.Diff.Compare<TreeChanges>(baseBr.Tip.Tree, compareBr.Tip.Tree);
+                var modifiedFiles = new List<string>();
+                int totalLinesAdded = 0;
+                int totalLinesRemoved = 0;
+
+                foreach (var change in comparison) {
+                    modifiedFiles.Add(change.Path);
+
+                    // Get detailed patch for line statistics
+                    try {
+                        var patch = repository.Diff.Compare<Patch>(
+                            baseBr.Tip.Tree,
+                            compareBr.Tip.Tree,
+                            new[] { change.Path }
+                        );
+
+                        totalLinesAdded += patch.LinesAdded;
+                        totalLinesRemoved += patch.LinesDeleted;
+                    } catch (Exception ex) {
+                        _logger.LogDebug("Error getting patch for file {File}: {Error}", change.Path, ex.Message);
+                    }
+                }
+
+                var summary = new StringBuilder();
+                summary.AppendLine($"Code Review: {baseBranch} -> {compareBranch}");
+                summary.AppendLine($"Files changed: {comparison.Count()}");
+                summary.AppendLine($"Lines added: +{totalLinesAdded}");
+                summary.AppendLine($"Lines removed: -{totalLinesRemoved}");
+                summary.AppendLine($"Net change: {totalLinesAdded - totalLinesRemoved:+#;-#;0}");
+                summary.AppendLine();
+                summary.AppendLine("Changed files:");
+
+                foreach (var change in comparison.Take(20)) {
+                    summary.AppendLine($"  {change.Status,-10} {change.Path}");
+                }
+
+                if (comparison.Count() > 20) {
+                    summary.AppendLine($"  ... and {comparison.Count() - 20} more files");
+                }
+
+                _logger.LogInformation("Code review complete: {FilesChanged} files, +{LinesAdded}/-{LinesRemoved}",
+                    comparison.Count(), totalLinesAdded, totalLinesRemoved);
+
+                return new CodeReviewResult(
+                    FilesChanged: comparison.Count(),
+                    LinesAdded: totalLinesAdded,
+                    LinesRemoved: totalLinesRemoved,
+                    ModifiedFiles: modifiedFiles,
+                    ReviewSummary: summary.ToString()
+                );
+            } catch (Exception ex) {
+                _logger.LogError(ex, "Error reviewing changes for solution at {SolutionPath}", solutionPath);
+                return new CodeReviewResult(
+                    FilesChanged: 0,
+                    LinesAdded: 0,
+                    LinesRemoved: 0,
+                    ModifiedFiles: Array.Empty<string>(),
+                    ReviewSummary: $"Error: {ex.Message}"
+                );
+            }
+        }, cancellationToken);
+    }
 }

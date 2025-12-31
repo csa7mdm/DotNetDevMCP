@@ -47,4 +47,25 @@ public class NoOpGitService : IGitService
     {
         return Task.FromResult(string.Empty);
     }
+
+    public Task<MergeAnalysisResult> AnalyzeMergeAsync(string solutionPath, string sourceBranch, string targetBranch, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(new MergeAnalysisResult(
+            CanMerge: false,
+            HasConflicts: false,
+            ConflictingFiles: Array.Empty<string>(),
+            AnalysisSummary: "Git integration is disabled"
+        ));
+    }
+
+    public Task<CodeReviewResult> ReviewChangesAsync(string solutionPath, string baseBranch, string compareBranch, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(new CodeReviewResult(
+            FilesChanged: 0,
+            LinesAdded: 0,
+            LinesRemoved: 0,
+            ModifiedFiles: Array.Empty<string>(),
+            ReviewSummary: "Git integration is disabled"
+        ));
+    }
 }
