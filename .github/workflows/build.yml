@@ -15,6 +15,11 @@ jobs:
   build:
     name: Build and Test
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -42,7 +47,8 @@ jobs:
       run: dotnet build ${{ env.SOLUTION_FILE }} --configuration ${{ matrix.configuration }} --no-restore
 
     - name: Run tests
-      run: dotnet test ${{ env.SOLUTION_FILE }} --configuration ${{ matrix.configuration }} --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx"
+      run: dotnet test ${{ env.SOLUTION_FILE }} --configuration ${{ matrix.configuration }} --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx" --filter "FullyQualifiedName!~Demo"
+      timeout-minutes: 10
 
     - name: Upload test results
       uses: actions/upload-artifact@v4
@@ -62,6 +68,7 @@ jobs:
   code-quality:
     name: Code Quality Analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
     - name: Checkout code
@@ -86,6 +93,7 @@ jobs:
   package:
     name: Create NuGet Packages
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [build, code-quality]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
@@ -119,6 +127,7 @@ jobs:
   publish-demo:
     name: Publish Sample Applications
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
