@@ -46,9 +46,17 @@ jobs:
     - name: Build solution
       run: dotnet build ${{ env.SOLUTION_FILE }} --configuration ${{ matrix.configuration }} --no-restore
 
-    - name: Run tests
-      run: dotnet test tests/DotNetDevMCP.Core.Tests/DotNetDevMCP.Core.Tests.csproj --configuration ${{ matrix.configuration }} --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx"
+    - name: Run tests with coverage
+      run: dotnet test tests/DotNetDevMCP.Core.Tests/DotNetDevMCP.Core.Tests.csproj --configuration ${{ matrix.configuration }} --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx" --collect:"XPlat Code Coverage" --results-directory ./coverage
       timeout-minutes: 5
+
+    - name: Upload coverage to Codecov
+      if: matrix.os == 'ubuntu-latest' && matrix.configuration == 'Release'
+      uses: codecov/codecov-action@v4
+      with:
+        directory: ./coverage
+        fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN }}
 
     - name: Upload test results
       uses: actions/upload-artifact@v4
