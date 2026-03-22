@@ -1,4 +1,4 @@
-namespace SharpTools.Tools.Interfaces;
+namespace DotNetDevMCP.CodeIntelligence.Interfaces;
 public interface ICodeModificationService {
     Task<Solution> AddMemberAsync(DocumentId documentId, INamedTypeSymbol targetTypeSymbol, MemberDeclarationSyntax newMember, int lineNumberHint = -1, CancellationToken cancellationToken = default);
     Task<Solution> AddStatementAsync(DocumentId documentId, MethodDeclarationSyntax targetMethod, StatementSyntax newStatement, CancellationToken cancellationToken, bool addToBeginning = false);

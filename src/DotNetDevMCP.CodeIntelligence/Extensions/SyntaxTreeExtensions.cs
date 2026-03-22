@@ -1,7 +1,7 @@
 ﻿using Microsoft.CodeAnalysis;
 using System.Linq;
 
-namespace SharpTools.Tools.Extensions;
+namespace DotNetDevMCP.CodeIntelligence.Extensions;
 
 public static class SyntaxTreeExtensions
 {

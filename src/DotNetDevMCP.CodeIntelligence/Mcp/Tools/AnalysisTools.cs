@@ -1,10 +1,10 @@
 using DiffPlex.DiffBuilder;
 using DiffPlex.DiffBuilder.Model;
 using ModelContextProtocol;
-using SharpTools.Tools.Services;
+using DotNetDevMCP.CodeIntelligence.Services;
 using System.Text.Json;
 
-namespace SharpTools.Tools.Mcp.Tools;
+namespace DotNetDevMCP.CodeIntelligence.Mcp.Tools;
 
 // Marker class for ILogger<T> category specific to AnalysisTools
 public class AnalysisToolsLogCategory { }

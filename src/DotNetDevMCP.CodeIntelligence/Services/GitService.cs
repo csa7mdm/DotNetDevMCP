@@ -1,7 +1,7 @@
 using LibGit2Sharp;
 using System.Text;
 
-namespace SharpTools.Tools.Services;
+namespace DotNetDevMCP.CodeIntelligence.Services;
 
 public class GitService : IGitService {
     private readonly ILogger<GitService> _logger;

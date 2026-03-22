@@ -2,7 +2,7 @@ using Microsoft.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace SharpTools.Tools.Interfaces {
+namespace DotNetDevMCP.CodeIntelligence.Interfaces {
     public class SourceResult {
         public string Source { get; set; } = string.Empty;
         public string FilePath { get; set; } = string.Empty;

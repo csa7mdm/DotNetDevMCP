@@ -1,28 +1,19 @@
-using SharpTools.Tools.Services;
-using SharpTools.Tools.Interfaces;
-using SharpTools.Tools.Mcp.Tools;
-using SharpTools.Tools.Extensions;
+using DotNetDevMCP.CodeIntelligence.Services;
+using DotNetDevMCP.CodeIntelligence.Interfaces;
+using DotNetDevMCP.CodeIntelligence.Mcp.Tools;
+using DotNetDevMCP.CodeIntelligence.Extensions;
 using System.CommandLine;
 using System.CommandLine.Parsing;
 using Microsoft.AspNetCore.HttpLogging;
 using Serilog;
 using ModelContextProtocol.Protocol;
 using System.Reflection;
-namespace SharpTools.SseServer;
 
-using SharpTools.Tools.Services;
-using SharpTools.Tools.Interfaces;
-using SharpTools.Tools.Mcp.Tools;
-using System.CommandLine;
-using System.CommandLine.Parsing;
-using Microsoft.AspNetCore.HttpLogging;
-using Serilog;
-using ModelContextProtocol.Protocol;
-using System.Reflection;
+namespace DotNetDevMCP.Server.Sse;
 
 public class Program {
     // --- Application ---
-    public const string ApplicationName = "SharpToolsMcpSseServer";
+    public const string ApplicationName = "DotNetDevMCP.SseServer";
     public const string ApplicationVersion = "0.0.1";
     public const string LogOutputTemplate = "[{Timestamp:HH:mm:ss} {Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}";
     public static async Task<int> Main(string[] args) {
@@ -58,7 +49,7 @@ public class Program {
             DefaultValueFactory = x => false
         };
 
-        var rootCommand = new RootCommand("SharpTools MCP Server") {
+        var rootCommand = new RootCommand("DotNetDevMCP Server") {
             portOption,
             logFileOption,
             logLevelOption,

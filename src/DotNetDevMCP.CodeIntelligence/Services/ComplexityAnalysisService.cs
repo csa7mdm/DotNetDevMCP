@@ -7,11 +7,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using SharpTools.Tools.Extensions;
-using SharpTools.Tools.Services;
+using DotNetDevMCP.CodeIntelligence.Extensions;
+using DotNetDevMCP.CodeIntelligence.Services;
 using ModelContextProtocol;
 
-namespace SharpTools.Tools.Services;
+namespace DotNetDevMCP.CodeIntelligence.Services;
 
 /// <summary>
 /// Service for analyzing code complexity metrics.

@@ -1,14 +1,14 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.Logging;
-using SharpTools.Tools.Interfaces;
-using SharpTools.Tools.Services;
+using DotNetDevMCP.CodeIntelligence.Interfaces;
+using DotNetDevMCP.CodeIntelligence.Services;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace SharpTools.Tools.Mcp.Tools {
+namespace DotNetDevMCP.CodeIntelligence.Mcp.Tools {
     public static class MemberAnalysisHelper {
         /// <summary>
         /// Analyzes a newly added member for complexity and similarity.

@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
-using SharpTools.Tools.Mcp.Tools;
-namespace SharpTools.Tools.Mcp;
+using DotNetDevMCP.CodeIntelligence.Mcp.Tools;
+namespace DotNetDevMCP.CodeIntelligence.Mcp;
 
 [McpServerPromptType]
 public static class Prompts {

@@ -1,7 +1,7 @@
-﻿using SharpTools.Tools.Services;
-using SharpTools.Tools.Interfaces;
-using SharpTools.Tools.Mcp.Tools;
-using SharpTools.Tools.Extensions;
+using DotNetDevMCP.CodeIntelligence.Services;
+using DotNetDevMCP.CodeIntelligence.Interfaces;
+using DotNetDevMCP.CodeIntelligence.Mcp.Tools;
+using DotNetDevMCP.CodeIntelligence.Extensions;
 using Serilog;
 using System.CommandLine;
 using System.CommandLine.Parsing;
@@ -15,10 +15,10 @@ using System;
 using System.Threading.Tasks;
 using System.Threading;
 
-namespace SharpTools.StdioServer;
+namespace DotNetDevMCP.Server.Stdio;
 
 public static class Program {
-    public const string ApplicationName = "SharpToolsMcpStdioServer";
+    public const string ApplicationName = "DotNetDevMCP.StdioServer";
     public const string ApplicationVersion = "0.0.1";
     public const string LogOutputTemplate = "[{Timestamp:HH:mm:ss} {Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}";
     public static async Task<int> Main(string[] args) {
@@ -48,7 +48,7 @@ public static class Program {
             DefaultValueFactory = x => false
         };
 
-        var rootCommand = new RootCommand("SharpTools MCP StdIO Server"){
+        var rootCommand = new RootCommand("DotNetDevMCP StdIO Server"){
             logDirOption,
             logLevelOption,
             loadSolutionOption,
@@ -166,4 +166,3 @@ public static class Program {
         }
     }
 }
-

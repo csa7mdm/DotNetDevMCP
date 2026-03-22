@@ -1,4 +1,4 @@
-namespace SharpTools.Tools.Services;
+namespace DotNetDevMCP.CodeIntelligence.Services;
 
 /// <summary>
 /// Represents information about a path's relationship to a solution
