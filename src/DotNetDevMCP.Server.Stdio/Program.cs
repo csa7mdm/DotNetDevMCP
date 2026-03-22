@@ -2,6 +2,8 @@ using DotNetDevMCP.CodeIntelligence.Services;
 using DotNetDevMCP.CodeIntelligence.Interfaces;
 using DotNetDevMCP.CodeIntelligence.Mcp.Tools;
 using DotNetDevMCP.CodeIntelligence.Extensions;
+using DotNetDevMCP.Analysis.Extensions;
+using DotNetDevMCP.Monitoring.Extensions;
 using Serilog;
 using System.CommandLine;
 using System.CommandLine.Parsing;
@@ -19,12 +21,14 @@ namespace DotNetDevMCP.Server.Stdio;
 
 public static class Program {
     public const string ApplicationName = "DotNetDevMCP.StdioServer";
-    public const string ApplicationVersion = "0.0.1";
+    public const string ApplicationVersion = "0.2.0";
     public const string LogOutputTemplate = "[{Timestamp:HH:mm:ss} {Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}";
     public static async Task<int> Main(string[] args) {
         _ = typeof(SolutionTools);
         _ = typeof(AnalysisTools);
         _ = typeof(ModificationTools);
+        _ = typeof(DotNetDevMCP.Analysis.Mcp.Tools.AnalysisTools);
+        _ = typeof(DotNetDevMCP.Monitoring.Mcp.Tools.MonitoringTools);
 
         var logDirOption = new Option<string?>("--log-directory") {
             Description = "Optional path to a log directory. If not specified, logs only go to console."
@@ -119,7 +123,9 @@ public static class Program {
         var builder = Host.CreateApplicationBuilder(args);
         builder.Logging.ClearProviders();
         builder.Logging.AddSerilog();
-        builder.Services.WithSharpToolsServices(!disableGit, buildConfiguration);
+        builder.Services.WithCodeIntelligenceServices(!disableGit, buildConfiguration);
+        builder.Services.AddAnalysisServices();
+        builder.Services.AddMonitoringServices();
 
         builder.Services
             .AddMcpServer(options => {
@@ -129,7 +135,7 @@ public static class Program {
                 };
             })
             .WithStdioServerTransport()
-            .WithSharpTools();
+            .WithCodeIntelligence();
 
         try {
             Log.Information("Starting {AppName} v{AppVersion}", ApplicationName, ApplicationVersion);
