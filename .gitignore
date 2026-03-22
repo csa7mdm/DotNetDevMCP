@@ -1,1 +1,43 @@
-Nothing needs to be added to .gitignore since only a README.md file was modified and no build artifacts, dependencies, or temporary files were detected in the changes.
+```
+# Build artifacts
+**/bin/
+**/obj/
+**/out/
+*.dll
+*.exe
+*.pdb
+*.so
+*.dylib
+*.nupkg
+
+# Dependencies
+packages/
+**/node_modules/
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Test and coverage
+coverage/
+**/TestResults/
+*.coverage
+
+# Local config
+**/appsettings.Development.json
+**/appsettings.Local.json
+```

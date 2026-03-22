@@ -2,6 +2,8 @@ using DotNetDevMCP.CodeIntelligence.Services;
 using DotNetDevMCP.CodeIntelligence.Interfaces;
 using DotNetDevMCP.CodeIntelligence.Mcp.Tools;
 using DotNetDevMCP.CodeIntelligence.Extensions;
+using DotNetDevMCP.Analysis.Extensions;
+using DotNetDevMCP.Monitoring.Extensions;
 using System.CommandLine;
 using System.CommandLine.Parsing;
 using Microsoft.AspNetCore.HttpLogging;
@@ -14,13 +16,15 @@ namespace DotNetDevMCP.Server.Sse;
 public class Program {
     // --- Application ---
     public const string ApplicationName = "DotNetDevMCP.SseServer";
-    public const string ApplicationVersion = "0.0.1";
+    public const string ApplicationVersion = "0.2.0";
     public const string LogOutputTemplate = "[{Timestamp:HH:mm:ss} {Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}";
     public static async Task<int> Main(string[] args) {
         // Ensure tool assemblies are loaded for MCP SDK's WithToolsFromAssembly
         _ = typeof(SolutionTools);
         _ = typeof(AnalysisTools);
         _ = typeof(ModificationTools);
+        _ = typeof(DotNetDevMCP.Analysis.Mcp.Tools.AnalysisTools);
+        _ = typeof(DotNetDevMCP.Monitoring.Mcp.Tools.MonitoringTools);
 
         var portOption = new Option<int>("--port") {
             Description = "The port number for the MCP server to listen on.",
@@ -134,7 +138,9 @@ public class Program {
                                               // Can be configured: logging.RootPath = ...
             });
 
-            builder.Services.WithSharpToolsServices(!disableGit, buildConfiguration);
+            builder.Services.WithCodeIntelligenceServices(!disableGit, buildConfiguration);
+            builder.Services.AddAnalysisServices();
+            builder.Services.AddMonitoringServices();
 
             builder.Services
                 .AddMcpServer(options => {
@@ -146,7 +152,7 @@ public class Program {
                     // but ModelContextProtocol's own Debug logging should be sufficient.
                 })
                 .WithHttpTransport()
-                .WithSharpTools();
+                .WithCodeIntelligence();
 
             var app = builder.Build();
 
