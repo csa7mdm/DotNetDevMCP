@@ -7,7 +7,6 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![Build Status](https://github.com/csa7mdm/DotNetDevMCP/actions/workflows/build.yml/badge.svg)](https://github.com/csa7mdm/DotNetDevMCP/actions/workflows/build.yml)
-[![codecov](https://codecov.io/gh/csa7mdm/DotNetDevMCP/branch/main/graph/badge.svg)](https://codecov.io/gh/csa7mdm/DotNetDevMCP)
 [![CodeQL](https://github.com/csa7mdm/DotNetDevMCP/actions/workflows/codeql.yml/badge.svg)](https://github.com/csa7mdm/DotNetDevMCP/actions/workflows/codeql.yml)
 [![Performance](https://img.shields.io/badge/performance-50--80%25%20faster-orange.svg)](#-performance)
 
