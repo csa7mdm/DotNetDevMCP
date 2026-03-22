@@ -1,72 +1,81 @@
 ```
-# Build results
+# Build artifacts
 **/bin/
 **/obj/
 **/Debug/
 **/Release/
+*.dll
+*.exe
+*.pdb
+*.so
+*.dylib
+*.nupkg
+**/packages/
+
+# Dependencies
+packages/
+**/node_modules/
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.egg-info/
+
+# IDE files
+.vs/
+.vscode/
+.idea/
+*.userprefs
+*.useroptions
+*.userosscache
+*.usergui
+**/[Dd]ebug/
+**/[Rr]elease/
+**/[Dd]ebugPublic/
+**/[Rr]eleasePublic/
+**/[Pp]rofile/
+**/[Tt]est[Rr]esults/
 **/x64/
 **/x86/
-**/AnyCPU/
+**/build/
+**/bld/
+**/Bin/
+**/Obj/
 
-# User-specific files
-*.user
-*.userosscache
-*.suo
-*.userprefs
-*.cache
-*.dbmdl
-*.dbproj.schemaview.xml
-
-# IDE - Visual Studio Code
-.vscode/
-
-# IDE - JetBrains
-.idea/
-
-# OS generated files
-.DS_Store
-Thumbs.db
-ehthumbs.db
-Icon?
-desktop.ini
+# Logs
+*.log
+**/logs/
 
 # Environment
 .env
 .env.local
 .env.*
+!*.env.example
 
-# Dependencies
-node_modules/
-packages/
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
 
-# Logs
-*.log
-
-# Test results
-TestResults/
+# Testing
 **/TestResults/
+*.testresults
 
 # NuGet
-*.nupkg
-.nuget/
-nuget.exe
+**/nuget.exe
+NuGet.Config
 
-# Build outputs
-**/output/
-**/artifacts/
-
-# Temporary files
-*.tmp
-*.temp
-*.bak
-*.cache
-
-# Coverage reports
+# Coverage
 coverage/
+**/coverage/
 *.coverage
 *.gcov
 *.lcov
 
-# Local configuration
-appsettings.Local.json
+# Benchmark results
+**/BenchmarkDotNet.Artifacts/
 ```
