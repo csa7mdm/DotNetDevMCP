@@ -1,8 +1,8 @@
 using System.Runtime.InteropServices;
 using System.Xml.Linq;
 using ModelContextProtocol;
-using SharpTools.Tools.Mcp.Tools;
-namespace SharpTools.Tools.Services;
+using DotNetDevMCP.CodeIntelligence.Mcp.Tools;
+namespace DotNetDevMCP.CodeIntelligence.Services;
 
 public sealed class SolutionManager : ISolutionManager {
     private readonly ILogger<SolutionManager> _logger;

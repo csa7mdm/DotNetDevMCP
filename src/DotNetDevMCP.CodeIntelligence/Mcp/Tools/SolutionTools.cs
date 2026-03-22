@@ -1,7 +1,7 @@
 using ModelContextProtocol;
-using SharpTools.Tools.Services;
+using DotNetDevMCP.CodeIntelligence.Services;
 
-namespace SharpTools.Tools.Mcp.Tools;
+namespace DotNetDevMCP.CodeIntelligence.Mcp.Tools;
 
 using System.Xml;
 using System.Xml.Linq;

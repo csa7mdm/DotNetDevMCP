@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace SharpTools.Tools.Interfaces;
+namespace DotNetDevMCP.CodeIntelligence.Interfaces;
 
 public interface IComplexityAnalysisService {
     Task AnalyzeMethodAsync(

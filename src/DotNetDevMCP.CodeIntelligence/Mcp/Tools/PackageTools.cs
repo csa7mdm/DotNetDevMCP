@@ -4,10 +4,10 @@ using NuGet.Common;
 using NuGet.Protocol;
 using NuGet.Protocol.Core.Types;
 using NuGet.Versioning;
-using SharpTools.Tools.Services;
+using DotNetDevMCP.CodeIntelligence.Services;
 using System.Xml.Linq;
 
-namespace SharpTools.Tools.Mcp.Tools;
+namespace DotNetDevMCP.CodeIntelligence.Mcp.Tools;
 
 // Marker class for ILogger<T> category specific to PackageTools
 public class PackageToolsLogCategory { }

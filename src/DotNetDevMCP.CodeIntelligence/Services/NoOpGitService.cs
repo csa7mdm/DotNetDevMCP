@@ -1,10 +1,10 @@
 
-using SharpTools.Tools.Interfaces;
+using DotNetDevMCP.CodeIntelligence.Interfaces;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace SharpTools.Tools.Services;
+namespace DotNetDevMCP.CodeIntelligence.Services;
 
 public class NoOpGitService : IGitService
 {

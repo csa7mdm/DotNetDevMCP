@@ -4,9 +4,9 @@ using DiffPlex.DiffBuilder;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.Extensions.Logging;
-using SharpTools.Tools.Interfaces;
-using SharpTools.Tools.Mcp.Tools;
-namespace SharpTools.Tools.Mcp;
+using DotNetDevMCP.CodeIntelligence.Interfaces;
+using DotNetDevMCP.CodeIntelligence.Mcp.Tools;
+namespace DotNetDevMCP.CodeIntelligence.Mcp;
 /// <summary>
 /// Provides reusable context injection methods for checking compilation errors and generating diffs.
 /// These methods are used across various tools to provide consistent feedback.
