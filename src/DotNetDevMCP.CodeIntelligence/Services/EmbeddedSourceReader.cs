@@ -8,7 +8,7 @@ using System.Text;
 using System.IO.Compression;
 using Microsoft.CodeAnalysis;
 
-namespace SharpTools.Tools.Services {
+namespace DotNetDevMCP.CodeIntelligence.Services {
     public class EmbeddedSourceReader {
         // GUID for embedded source custom debug information
         private static readonly Guid EmbeddedSourceGuid = new Guid("0E8A571B-6926-466E-B4AD-8AB04611F5FE");

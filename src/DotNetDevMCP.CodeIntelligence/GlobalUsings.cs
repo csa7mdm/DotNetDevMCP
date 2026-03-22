@@ -15,8 +15,8 @@ global using Microsoft.Extensions.Logging;
 global using ModelContextProtocol.Protocol;
 
 global using ModelContextProtocol.Server;
-global using SharpTools.Tools.Services;
-global using SharpTools.Tools.Interfaces;
+global using DotNetDevMCP.CodeIntelligence.Services;
+global using DotNetDevMCP.CodeIntelligence.Interfaces;
 global using System;
 global using System.Collections.Concurrent;
 global using System.Collections.Generic;

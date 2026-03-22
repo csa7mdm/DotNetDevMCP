@@ -1,4 +1,4 @@
-namespace SharpTools.Tools.Interfaces;
+namespace DotNetDevMCP.CodeIntelligence.Interfaces;
 
 /// <summary>
 /// Service for performing file system operations on documents within a solution.

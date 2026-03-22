@@ -1,4 +1,4 @@
-namespace SharpTools.Tools.Interfaces;
+namespace DotNetDevMCP.CodeIntelligence.Interfaces;
 public interface ICodeAnalysisService {
     Task<IEnumerable<ISymbol>> FindImplementationsAsync(ISymbol symbol, CancellationToken cancellationToken);
     Task<IEnumerable<ISymbol>> FindOverridesAsync(ISymbol symbol, CancellationToken cancellationToken);

@@ -1,4 +1,4 @@
-namespace SharpTools.Tools.Interfaces;
+namespace DotNetDevMCP.CodeIntelligence.Interfaces;
 
 public interface ISolutionManager : IDisposable {
     [MemberNotNullWhen(true, nameof(CurrentWorkspace), nameof(CurrentSolution))]

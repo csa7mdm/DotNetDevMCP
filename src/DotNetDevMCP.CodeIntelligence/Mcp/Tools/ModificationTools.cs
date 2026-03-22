@@ -17,11 +17,11 @@ using Microsoft.CodeAnalysis.FindSymbols;
 using Microsoft.Extensions.FileSystemGlobbing;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
-using SharpTools.Tools.Interfaces;
-using SharpTools.Tools.Mcp;
-using SharpTools.Tools.Services;
+using DotNetDevMCP.CodeIntelligence.Interfaces;
+using DotNetDevMCP.CodeIntelligence.Mcp;
+using DotNetDevMCP.CodeIntelligence.Services;
 
-namespace SharpTools.Tools.Mcp.Tools;
+namespace DotNetDevMCP.CodeIntelligence.Mcp.Tools;
 
 // Marker class for ILogger<T> category specific to ModificationTools
 public class ModificationToolsLogCategory { }
