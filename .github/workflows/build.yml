@@ -63,7 +63,7 @@ jobs:
       timeout-minutes: 10
 
     - name: Upload test results
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       if: always()
       with:
         name: test-results-${{ matrix.os }}-${{ matrix.configuration }}
@@ -133,7 +133,7 @@ jobs:
       run: dotnet pack ${{ env.CORE_PROJECTS }} --configuration Release --no-build --output ./artifacts || true
 
     - name: Upload packages
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: nuget-packages
         path: ./artifacts/*.nupkg
@@ -162,7 +162,7 @@ jobs:
       run: dotnet publish samples/TestingServiceDemo/TestingServiceDemo.csproj --configuration Release --output ./publish/TestingServiceDemo || true
 
     - name: Upload published artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: sample-applications
         path: ./publish/**/*
