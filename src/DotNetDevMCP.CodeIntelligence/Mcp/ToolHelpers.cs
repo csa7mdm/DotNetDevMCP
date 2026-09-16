@@ -1,9 +1,9 @@
 using System.Text.Encodings.Web;
 using System.Text.Json.Serialization;
 using ModelContextProtocol;
-using SharpTools.Tools.Services;
+using DotNetDevMCP.CodeIntelligence.Services;
 
-namespace SharpTools.Tools.Mcp;
+namespace DotNetDevMCP.CodeIntelligence.Mcp;
 
 internal static class ToolHelpers {
     public const string SharpToolPrefix = "SharpTool_";

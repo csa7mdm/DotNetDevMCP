@@ -1,7 +1,7 @@
 
 using System.Collections.Generic;
 
-namespace SharpTools.Tools.Services {
+namespace DotNetDevMCP.CodeIntelligence.Services {
     public class MethodSimilarityResult {
         public List<MethodSemanticFeatures> SimilarMethods { get; }
         public double AverageSimilarityScore { get; } // Or some other metric

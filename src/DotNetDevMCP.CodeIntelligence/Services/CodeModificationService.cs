@@ -6,8 +6,8 @@ using Microsoft.CodeAnalysis.Text;
 using Microsoft.Extensions.FileSystemGlobbing;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
-using SharpTools.Tools.Interfaces;
-using SharpTools.Tools.Mcp;
+using DotNetDevMCP.CodeIntelligence.Interfaces;
+using DotNetDevMCP.CodeIntelligence.Mcp;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -16,7 +16,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-namespace SharpTools.Tools.Services;
+namespace DotNetDevMCP.CodeIntelligence.Services;
 
 public class CodeModificationService : ICodeModificationService {
     private readonly ISolutionManager _solutionManager;

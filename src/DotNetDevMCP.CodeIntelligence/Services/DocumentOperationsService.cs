@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using System.Xml;
 using Microsoft.CodeAnalysis.Text;
 
-namespace SharpTools.Tools.Services;
+namespace DotNetDevMCP.CodeIntelligence.Services;
 
 public class DocumentOperationsService : IDocumentOperationsService {
     private readonly ISolutionManager _solutionManager;

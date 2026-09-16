@@ -2,7 +2,7 @@ using Microsoft.CodeAnalysis;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace SharpTools.Tools.Interfaces {
+namespace DotNetDevMCP.CodeIntelligence.Interfaces {
     /// <summary>
     /// Service for performing fuzzy lookups of fully qualified names in the solution
     /// </summary>

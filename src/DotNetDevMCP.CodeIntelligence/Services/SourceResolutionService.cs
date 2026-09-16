@@ -10,9 +10,9 @@ using ICSharpCode.Decompiler.TypeSystem;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.Extensions.Logging;
-using SharpTools.Tools.Interfaces;
+using DotNetDevMCP.CodeIntelligence.Interfaces;
 
-namespace SharpTools.Tools.Services {
+namespace DotNetDevMCP.CodeIntelligence.Services {
     public class SourceResolutionService : ISourceResolutionService {
         private readonly ISolutionManager _solutionManager;
         private readonly ILogger<SourceResolutionService> _logger;

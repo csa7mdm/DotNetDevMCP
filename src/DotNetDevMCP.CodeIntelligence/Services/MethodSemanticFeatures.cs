@@ -2,7 +2,7 @@
 using Microsoft.CodeAnalysis; // Keep for potential future use, but not strictly needed for current properties
 using System.Collections.Generic;
 
-namespace SharpTools.Tools.Services {
+namespace DotNetDevMCP.CodeIntelligence.Services {
     public class MethodSemanticFeatures {
         // Store the fully qualified name instead of the IMethodSymbol object
         public string FullyQualifiedMethodName { get; }

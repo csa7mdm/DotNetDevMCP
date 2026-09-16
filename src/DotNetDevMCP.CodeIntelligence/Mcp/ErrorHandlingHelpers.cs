@@ -1,11 +1,11 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
 using ModelContextProtocol;
-using SharpTools.Tools.Services;
+using DotNetDevMCP.CodeIntelligence.Services;
 using System.Runtime.CompilerServices;
 using System.Text;
 
-namespace SharpTools.Tools.Mcp;
+namespace DotNetDevMCP.CodeIntelligence.Mcp;
 
 /// <summary>
 /// Provides centralized error handling helpers for SharpTools.

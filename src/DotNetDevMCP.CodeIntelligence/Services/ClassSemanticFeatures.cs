@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace SharpTools.Tools.Services;
+namespace DotNetDevMCP.CodeIntelligence.Services;
 
 public record ClassSemanticFeatures(
     string FullyQualifiedClassName,

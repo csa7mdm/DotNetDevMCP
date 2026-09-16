@@ -1,7 +1,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using SharpTools.Tools.Interfaces;
+using DotNetDevMCP.CodeIntelligence.Interfaces;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -10,9 +10,9 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using SharpTools.Tools.Mcp;
+using DotNetDevMCP.CodeIntelligence.Mcp;
 
-namespace SharpTools.Tools.Services {
+namespace DotNetDevMCP.CodeIntelligence.Services {
     public class FuzzyFqnLookupService : IFuzzyFqnLookupService {
         private readonly ILogger<FuzzyFqnLookupService> _logger;
         private ISolutionManager? _solutionManager;

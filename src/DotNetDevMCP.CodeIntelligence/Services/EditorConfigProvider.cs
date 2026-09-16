@@ -1,4 +1,4 @@
-namespace SharpTools.Tools.Services;
+namespace DotNetDevMCP.CodeIntelligence.Services;
 
 public class EditorConfigProvider : IEditorConfigProvider
 {

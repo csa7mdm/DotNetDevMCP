@@ -1,21 +1,21 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using SharpTools.Tools.Interfaces;
-using SharpTools.Tools.Services;
+using DotNetDevMCP.CodeIntelligence.Interfaces;
+using DotNetDevMCP.CodeIntelligence.Services;
 using System.Reflection;
 
-namespace SharpTools.Tools.Extensions;
+namespace DotNetDevMCP.CodeIntelligence.Extensions;
 
 /// <summary>
-/// Extension methods for IServiceCollection to register SharpTools services.
+/// Extension methods for IServiceCollection to register CodeIntelligence services.
 /// </summary>
 public static class ServiceCollectionExtensions {
     /// <summary>
-    /// Adds all SharpTools services to the service collection.
+    /// Adds all CodeIntelligence services to the service collection.
     /// </summary>
     /// <param name="services">The service collection to add services to.</param>
     /// <returns>The service collection for chaining.</returns>
-    public static IServiceCollection WithSharpToolsServices(this IServiceCollection services, bool enableGit = true, string? buildConfiguration = null) {
+    public static IServiceCollection WithCodeIntelligenceServices(this IServiceCollection services, bool enableGit = true, string? buildConfiguration = null) {
         services.AddSingleton<IFuzzyFqnLookupService, FuzzyFqnLookupService>();
         services.AddSingleton<ISolutionManager>(sp => 
             new SolutionManager(
@@ -41,12 +41,12 @@ public static class ServiceCollectionExtensions {
     }
 
     /// <summary>
-    /// Adds all SharpTools services and tools to the MCP service builder.
+    /// Adds all CodeIntelligence services and tools to the MCP service builder.
     /// </summary>
     /// <param name="builder">The MCP service builder.</param>
     /// <returns>The MCP service builder for chaining.</returns>
-    public static IMcpServerBuilder WithSharpTools(this IMcpServerBuilder builder) {
-        var toolAssembly = Assembly.Load("SharpTools.Tools");
+    public static IMcpServerBuilder WithCodeIntelligence(this IMcpServerBuilder builder) {
+        var toolAssembly = typeof(AnalysisTools).Assembly;
 
         return builder
             .WithToolsFromAssembly(toolAssembly)

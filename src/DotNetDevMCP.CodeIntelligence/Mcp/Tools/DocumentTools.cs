@@ -1,14 +1,14 @@
 using Microsoft.CodeAnalysis;
 using ModelContextProtocol;
-using SharpTools.Tools.Services;
-using SharpTools.Tools.Mcp;
-using SharpTools.Tools.Mcp.Tools;
+using DotNetDevMCP.CodeIntelligence.Services;
+using DotNetDevMCP.CodeIntelligence.Mcp;
+using DotNetDevMCP.CodeIntelligence.Mcp.Tools;
 using System.Security;
 using System.Text;
 using DiffPlex.DiffBuilder;
 using DiffPlex.DiffBuilder.Model;
 
-namespace SharpTools.Tools.Mcp.Tools;
+namespace DotNetDevMCP.CodeIntelligence.Mcp.Tools;
 
 // Marker class for ILogger<T> category specific to DocumentTools
 public class DocumentToolsLogCategory { }
