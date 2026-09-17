@@ -1,3 +1,6 @@
+using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Server;
+using System.ComponentModel;
 // Copyright (c) 2025 Ahmed Mustafa
 
 using ModelContextProtocol;

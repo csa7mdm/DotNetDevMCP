@@ -1,3 +1,4 @@
+using ModelContextProtocol.Server;
 // Copyright (c) 2025 Ahmed Mustafa
 
 using Microsoft.Extensions.DependencyInjection;

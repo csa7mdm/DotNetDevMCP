@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using DotNetDevMCP.CodeIntelligence.Interfaces;
 using DotNetDevMCP.CodeIntelligence.Services;
+using DotNetDevMCP.CodeIntelligence.Mcp.Tools;
 using System.Reflection;
 
 namespace DotNetDevMCP.CodeIntelligence.Extensions;

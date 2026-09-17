@@ -80,7 +80,15 @@ public class ConcurrentExecutor : IConcurrentExecutor
                             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                             timeoutCts.CancelAfter(options.OperationTimeout.Value);
 
-                            result = await operation(timeoutCts.Token);
+                            try
+                            {
+                                result = await operation(timeoutCts.Token);
+                            }
+                            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                            {
+                                // Timeout, not caller cancellation: record it as a per-operation failure below
+                                throw new TimeoutException($"Operation {index} exceeded {options.OperationTimeout.Value.TotalMilliseconds:F0} ms");
+                            }
                         }
                         else
                         {
@@ -92,9 +100,9 @@ public class ConcurrentExecutor : IConcurrentExecutor
 
                         ReportProgress(progress, totalOperations, completedCount, failedCount);
                     }
-                    catch (OperationCanceledException)
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
-                        // Always propagate cancellation
+                        // Caller cancellation always propagates
                         throw;
                     }
                     catch (Exception ex)

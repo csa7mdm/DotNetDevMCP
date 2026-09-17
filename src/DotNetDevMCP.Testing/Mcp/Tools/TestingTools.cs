@@ -1,3 +1,6 @@
+using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Server;
+using System.ComponentModel;
 // Copyright (c) 2025 Ahmed Mustafa
 
 using ModelContextProtocol;
@@ -71,8 +74,8 @@ public static partial class TestingTools
     public static async Task<object> RunTests(
         TestingService testingService,
         ILogger<TestingToolsLogCategory> logger,
-        [Description("List of test fully qualified names to run. If empty, runs all discovered tests.")] IEnumerable<string> testNames,
         [Description("Path to the test assembly or project file")] string assemblyPath,
+        [Description("Test fully qualified names to run. Empty runs all discovered tests.")] string[]? testNames = null,
         [Description("Execution strategy: Sequential, FullParallel, AssemblyLevelParallel, SmartParallel")] string strategy = "SmartParallel",
         [Description("Maximum number of parallel tests (default: processor count)")] int? maxParallelTests = null,
         [Description("Test timeout in seconds (default: 60)")] int? timeoutSeconds = null,
@@ -94,7 +97,7 @@ public static partial class TestingTools
             
             // Discover tests if no specific names provided
             IEnumerable<TestCase> testCases;
-            if (!testNames.Any())
+            if (testNames is null || testNames.Length == 0)
             {
                 var allTests = await testingService.DiscoverTestsAsync(assemblyPath, cancellationToken: cancellationToken);
                 testCases = allTests;

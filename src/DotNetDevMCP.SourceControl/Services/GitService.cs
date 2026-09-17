@@ -64,23 +64,24 @@ public class GitService
     {
         try
         {
-            var rootPath = await RunGitCommandAsync(repoPath, "rev-parse --show-toplevel", cancellationToken);
-            if (!rootPath.Success)
+            var rootResult = await RunGitCommandAsync(repoPath, "rev-parse --show-toplevel", cancellationToken);
+            if (!rootResult.Success)
                 throw new InvalidOperationException("Not a git repository");
+            var rootPath = rootResult.Output.Trim();
 
-            var branchResult = await RunGitCommandAsync(repoPath.RootPath, "branch --show-current", cancellationToken);
+            var branchResult = await RunGitCommandAsync(rootPath, "branch --show-current", cancellationToken);
             var currentBranch = branchResult.Output.Trim();
 
-            var statusResult = await RunGitCommandAsync(repoPath.RootPath, "status --porcelain", cancellationToken);
+            var statusResult = await RunGitCommandAsync(rootPath, "status --porcelain", cancellationToken);
             var changes = ParseStatus(statusResult.Output);
 
-            var remoteResult = await RunGitCommandAsync(repoPath.RootPath, "remote", cancellationToken);
+            var remoteResult = await RunGitCommandAsync(rootPath, "remote", cancellationToken);
             var remotes = remoteResult.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
-            var (ahead, behind) = await GetAheadBehindCountAsync(repoPath.RootPath, currentBranch, cancellationToken);
+            var (ahead, behind) = await GetAheadBehindCountAsync(rootPath, currentBranch, cancellationToken);
 
             return new GitRepoInfo(
-                RootPath: rootPath.Output.Trim(),
+                RootPath: rootPath,
                 CurrentBranch: currentBranch,
                 IsDirty: changes.Any() || statusResult.Output.Contains("Untracked files"),
                 AheadCount: ahead,

@@ -9,21 +9,22 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn> <!-- Missing XML comment for publicly visible type or member -->
 
     <!-- Version Information -->
-    <Version>0.1.0-alpha</Version>
+    <Version>0.1.0</Version>
+    <IsPackable>false</IsPackable>
     <AssemblyVersion>0.1.0.0</AssemblyVersion>
     <FileVersion>0.1.0.0</FileVersion>
 
     <!-- Package Metadata -->
     <Authors>Ahmed Mustafa</Authors>
-    <Company>DotNetDevMCP</Company>
+    <Company>Ahmed Mustafa</Company>
     <Product>DotNetDevMCP</Product>
     <Copyright>Copyright © 2025 Ahmed Mustafa</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/csa7mdm/DotNetDevMCP</PackageProjectUrl>
     <RepositoryUrl>https://github.com/csa7mdm/DotNetDevMCP</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageTags>dotnet;mcp;testing;build;roslyn;parallel;ai;llm;model-context-protocol</PackageTags>
-    <Description>AI-Powered .NET Development MCP Server with Parallel Test Execution, Build Automation, and Code Intelligence</Description>
+    <PackageTags>mcp;mcp-server;model-context-protocol;dotnet;csharp;roslyn;testing;build;ai;agents</PackageTags>
+    <Description>MCP server for .NET development: Roslyn code intelligence, build, parallel test execution, git, and a DAG orchestrator that runs its own tools concurrently.</Description>
 
     <!-- Documentation -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -40,14 +41,10 @@
     <Deterministic>true</Deterministic>
   </PropertyGroup>
 
-  <!-- Source Link package references for all projects -->
-  <ItemGroup>
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All"/>
-  </ItemGroup>
 
   <!-- Analyzer packages for code quality -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="10.0.102">
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>

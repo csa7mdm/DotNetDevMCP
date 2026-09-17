@@ -13,7 +13,7 @@ Thank you for your interest in contributing to DotNetDevMCP! This document provi
 
 ### Prerequisites
 
-- .NET 9.0 SDK or later
+- .NET 10.0 SDK or later
 - Git
 - Your favorite C# IDE (Rider, Visual Studio, VS Code)
 

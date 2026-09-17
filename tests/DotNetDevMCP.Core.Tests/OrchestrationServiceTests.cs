@@ -3,7 +3,7 @@
 using DotNetDevMCP.Core.Interfaces;
 using DotNetDevMCP.Core.Models;
 using DotNetDevMCP.Orchestration;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace DotNetDevMCP.Core.Tests;

@@ -3,7 +3,7 @@
 using DotNetDevMCP.Core.Interfaces;
 using DotNetDevMCP.Core.Models;
 using DotNetDevMCP.Orchestration;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace DotNetDevMCP.Core.Tests;
@@ -188,8 +188,8 @@ public class WorkflowEngineTests
     {
         // Arrange
         var engine = new WorkflowEngine();
-        var progressReports = new List<WorkflowProgress>();
-        var progress = new Progress<WorkflowProgress>(p => progressReports.Add(p));
+        var progressReports = new System.Collections.Concurrent.ConcurrentQueue<WorkflowProgress>();
+        var progress = new SyncProgress<WorkflowProgress>(p => progressReports.Enqueue(p));
 
         var workflow = new TestWorkflow("ProgressFlow")
             .AddStep("Step1", async (ctx, ct) => { await Task.Delay(20, ct); return new StepResult(true); })
