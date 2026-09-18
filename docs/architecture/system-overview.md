@@ -116,7 +116,7 @@ graph TB
 **Key Classes**:
 - `McpServer`: Main server implementation
 - `StdioTransport`: Standard I/O transport
-- `SseTransport`: Server-Sent Events (HTTP) transport
+- Streamable HTTP transport (`--http`)
 - `ToolRegistry`: Tool discovery and routing
 - `SessionManager`: Client session management
 
@@ -236,7 +236,7 @@ graph TB
 - `MetricsTracker`: Code metrics tracking
 - `AnomalyDetector`: Pattern anomaly detection
 
-##### 3.6 Documentation (`DotNetDevMCP.Documentation`)
+##### 3.6 Documentation (planned)
 
 **Purpose**: AI-friendly documentation generation
 
@@ -404,7 +404,7 @@ var mergedAnalysis = analysisMerger.Merge(analyses);
 
 - **Symbol Resolution**: < 100ms for most symbols
 - **Solution Loading**: 1-5 seconds (depends on size)
-- **Test Execution**: Parallel execution reduces time by 50-80%
+- **Test Execution**: Parallel execution reduced wall time 3.8x on this repository's test suite (see README)
 - **Code Analysis**: Concurrent analysis across files
 - **Memory Usage**: ~500MB baseline + ~100MB per loaded solution
 

@@ -1,294 +1,185 @@
 // Copyright (c) 2025 Ahmed Mustafa
 
-using ModelContextProtocol;
+using System.ComponentModel;
+using System.Text.Json;
 using DotNetDevMCP.Core.Interfaces;
 using DotNetDevMCP.Core.Models;
-using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
 
 namespace DotNetDevMCP.Orchestration.Mcp.Tools;
 
 /// <summary>
-/// Marker class for ILogger category specific to OrchestrationTools
+/// Log category marker for orchestration tools
 /// </summary>
-public class OrchestrationToolsLogCategory { }
+public sealed class OrchestrationToolsLogCategory { }
 
 /// <summary>
-/// MCP Tools for orchestrating parallel operations and workflow execution
+/// MCP tools that run other tools of this server concurrently: a flat parallel batch,
+/// or a dependency graph (DAG) where independent steps run in parallel.
 /// </summary>
 [McpServerToolType]
-public static partial class OrchestrationTools
+public static class OrchestrationTools
 {
-    [McpServerTool(Name = "orchestrate_parallel", Idempotent = false, ReadOnly = true, Destructive = false, OpenWorld = false)]
-    [Description("Executes multiple tool operations in parallel with resource management and throttling. Useful for running independent operations concurrently.")]
+    [McpServerTool(Name = "orchestrate_parallel", Idempotent = false, ReadOnly = false, Destructive = false, OpenWorld = false)]
+    [Description("Runs several tools of this server concurrently (throttled by the resource manager) and returns every result. Use for independent operations, e.g. build two projects while running tests.")]
+    // ponytail: arrays, not IEnumerable<T> - the SDK binds IEnumerable<T> parameters from DI and hides them from the schema.
     public static async Task<object> ExecuteParallel(
+        McpServer server,
+        RequestContext<CallToolRequestParams> context,
         IOrchestrationService orchestrationService,
         ILogger<OrchestrationToolsLogCategory> logger,
-        [Description("List of tool operations to execute in parallel. Each operation specifies a tool name and arguments.")] 
-        IEnumerable<ToolOperationInput> operations,
+        [Description("Operations to run. Each has the tool name and its arguments object.")] ToolOperationInput[] operations,
         [Description("Maximum degree of parallelism (default: processor count)")] int? maxParallelism = null,
-        [Description("Continue executing remaining operations if one fails")] bool continueOnError = true,
-        [Description("Timeout in seconds for each operation")] int? timeoutSeconds = null,
         CancellationToken cancellationToken = default)
     {
-        try
+        var ops = operations.ToList();
+        if (maxParallelism is > 0)
         {
-            logger.LogInformation("Executing {Count} operations in parallel", operations.Count());
-            
-            // Configure resource manager if maxParallelism specified
-            if (maxParallelism.HasValue)
-            {
-                orchestrationService.ResourceManager.MaxConcurrency = maxParallelism.Value;
-            }
-            
-            var operationList = operations.Select(op => (op.ToolName, op.Arguments)).ToList();
-            
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            var results = await orchestrationService.ExecuteParallelAsync(operationList, cancellationToken);
-            stopwatch.Stop();
-            
-            var resultList = results.ToList();
-            var successCount = resultList.Count(r => r.IsSuccess);
-            var failureCount = resultList.Count(r => !r.IsSuccess);
-            
-            logger.LogInformation("Parallel execution completed: {Success}/{Total} successful in {Duration}s", 
-                successCount, resultList.Count, stopwatch.Elapsed.TotalSeconds);
-            
-            return new
-            {
-                Success = failureCount == 0,
-                TotalOperations = resultList.Count,
-                SuccessfulOperations = successCount,
-                FailedOperations = failureCount,
-                DurationSeconds = Math.Round(stopwatch.Elapsed.TotalSeconds, 2),
-                Results = resultList.Select((r, i) => new
-                {
-                    Index = i,
-                    ToolName = operationList[i].toolName,
-                    r.IsSuccess,
-                    r.Message,
-                    Error = r.IsFailure ? r.Error : null
-                })
-            };
+            orchestrationService.ResourceManager.MaxConcurrency = maxParallelism.Value;
         }
-        catch (Exception ex)
+
+        foreach (var name in ops.Select(o => o.ToolName).Distinct())
         {
-            logger.LogError(ex, "Parallel execution failed");
-            return new 
-            { 
-                Success = false, 
-                Error = ex.Message,
-                TotalOperations = 0,
-                SuccessfulOperations = 0,
-                FailedOperations = 0
-            };
+            orchestrationService.RegisterTool(name, (args, ct) => InvokeServerToolAsync(server, context, name, args, ct));
         }
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var results = (await orchestrationService.ExecuteParallelAsync(
+            ops.Select(o => (o.ToolName, SerializeArgs(o.Arguments))),
+            cancellationToken)).ToList();
+        stopwatch.Stop();
+
+        var failed = results.Count(r => !r.IsSuccess);
+        logger.LogInformation("orchestrate_parallel: {Ok}/{Total} succeeded in {Sec:F2}s", results.Count - failed, results.Count, stopwatch.Elapsed.TotalSeconds);
+
+        return new
+        {
+            Success = failed == 0,
+            TotalOperations = results.Count,
+            FailedOperations = failed,
+            DurationSeconds = Math.Round(stopwatch.Elapsed.TotalSeconds, 2),
+            Results = results.Select((r, i) => new { Index = i, ops[i].ToolName, r.IsSuccess, r.Content, r.Error }),
+        };
     }
 
-    [McpServerTool(Name = "execute_workflow", Idempotent = false, ReadOnly = true, Destructive = false, OpenWorld = false)]
-    [Description("Executes a workflow consisting of sequential and/or parallel steps with conditional execution support.")]
+    [McpServerTool(Name = "execute_workflow", Idempotent = false, ReadOnly = false, Destructive = false, OpenWorld = false)]
+    [Description("Runs tools of this server as a dependency graph: steps whose dependencies are done run in parallel, dependents wait. Use for build -> test -> analyze pipelines.")]
     public static async Task<object> ExecuteWorkflow(
+        McpServer server,
+        RequestContext<CallToolRequestParams> context,
         IOrchestrationService orchestrationService,
         ILogger<OrchestrationToolsLogCategory> logger,
         [Description("Name of the workflow")] string workflowName,
-        [Description("List of workflow steps to execute")] IEnumerable<WorkflowStepInput> steps,
-        [Description("Initial context values to pass to the workflow")] Dictionary<string, object>? initialContext = null,
-        [Description("Stop workflow execution on first error")] bool failFast = false,
+        [Description("Steps. dependsOn lists step names that must finish first; steps with no unmet dependencies run in parallel.")] WorkflowStepInput[] steps,
         CancellationToken cancellationToken = default)
     {
-        try
+        var workflow = new ToolWorkflow(
+            workflowName,
+            steps.Select(s => new ToolWorkflowStep(s, (args, ct) => InvokeServerToolAsync(server, context, s.ToolName, args, ct))).ToList());
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var result = await orchestrationService.ExecuteWorkflowAsync(workflow, cancellationToken);
+        stopwatch.Stop();
+
+        logger.LogInformation("execute_workflow {Name}: success={Ok} in {Sec:F2}s", workflowName, result.IsSuccess, stopwatch.Elapsed.TotalSeconds);
+
+        return new
         {
-            logger.LogInformation("Executing workflow: {WorkflowName} with {StepsCount} steps", workflowName, steps.Count());
-            
-            // Create workflow from input
-            var workflow = new DynamicWorkflow(
-                Name: workflowName,
-                Steps: steps.Select(s => new WorkflowStep(
-                    Name: s.Name,
-                    ToolName: s.ToolName,
-                    Arguments: s.Arguments,
-                    Condition: s.Condition,
-                    IsParallel = false // Could be extended to support parallel groups
-                )).ToList(),
-                InitialContext: initialContext ?? new Dictionary<string, object>(),
-                FailFast: failFast);
-            
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            var result = await orchestrationService.ExecuteWorkflowAsync(workflow, cancellationToken);
-            stopwatch.Stop();
-            
-            logger.LogInformation("Workflow '{WorkflowName}' completed: Success={Success}, Steps={Successful}/{Total}", 
-                workflowName, result.IsSuccess, 
-                result.IsSuccess ? workflow.Steps.Count : 0, workflow.Steps.Count);
-            
-            if (result.IsSuccess)
-            {
-                return new
-                {
-                    Success = true,
-                    WorkflowName = workflowName,
-                    TotalSteps = workflow.Steps.Count,
-                    SuccessfulSteps = workflow.Steps.Count,
-                    FailedSteps = 0,
-                    DurationSeconds = Math.Round(stopwatch.Elapsed.TotalSeconds, 2),
-                    Message = result.Message
-                };
-            }
-            else
-            {
-                // Parse error message to extract failed steps
-                var failedSteps = new List<string>();
-                if (result.Error != null && result.Error.Contains("Failed steps:"))
-                {
-                    var failedPart = result.Error.Split("Failed steps:")[1].Trim();
-                    failedSteps = failedPart.Split(',').Select(s => s.Trim()).ToList();
-                }
-                
-                return new
-                {
-                    Success = false,
-                    WorkflowName = workflowName,
-                    TotalSteps = workflow.Steps.Count,
-                    SuccessfulSteps = workflow.Steps.Count - failedSteps.Count,
-                    FailedSteps = failedSteps.Count,
-                    FailedStepNames = failedSteps,
-                    DurationSeconds = Math.Round(stopwatch.Elapsed.TotalSeconds, 2),
-                    Error = result.Error
-                };
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Workflow execution failed: {WorkflowName}", workflowName);
-            return new 
-            { 
-                Success = false, 
-                WorkflowName = workflowName,
-                Error = ex.Message,
-                TotalSteps = 0,
-                SuccessfulSteps = 0,
-                FailedSteps = 0
-            };
-        }
+            result.IsSuccess,
+            WorkflowName = workflowName,
+            TotalSteps = workflow.StepList.Count,
+            DurationSeconds = Math.Round(stopwatch.Elapsed.TotalSeconds, 2),
+            Message = result.Content,
+            result.Error,
+            Steps = workflow.StepList.Select(s => new { s.Name, s.DependsOn, Result = s.LastResult?.Content, Error = s.LastResult?.Error }),
+        };
     }
 
     [McpServerTool(Name = "get_resource_metrics", Idempotent = true, ReadOnly = true, Destructive = false, OpenWorld = false)]
-    [Description("Retrieves current resource utilization metrics from the orchestration service's resource manager.")]
-    public static async Task<object> GetResourceMetrics(
+    [Description("Returns current concurrency limits and how many orchestrated operations are running or queued.")]
+    public static object GetResourceMetrics(IOrchestrationService orchestrationService)
+        => orchestrationService.ResourceManager.GetMetrics();
+
+    [McpServerTool(Name = "configure_resource_limits", Idempotent = true, ReadOnly = false, Destructive = false, OpenWorld = false)]
+    [Description("Sets the maximum number of orchestrated operations that may run concurrently.")]
+    public static object ConfigureResourceLimits(
         IOrchestrationService orchestrationService,
-        ILogger<OrchestrationToolsLogCategory> logger,
-        CancellationToken cancellationToken = default)
+        [Description("Maximum number of concurrent operations (>= 1)")] int maxConcurrency)
     {
+        if (maxConcurrency < 1) return new { Success = false, Error = "maxConcurrency must be >= 1" };
+        orchestrationService.ResourceManager.MaxConcurrency = maxConcurrency;
+        return new { Success = true, MaxConcurrency = maxConcurrency };
+    }
+
+    // --- dispatch into this server's own tool collection ---
+
+    private static async Task<ToolResult> InvokeServerToolAsync(
+        McpServer server, RequestContext<CallToolRequestParams> context, string toolName, string argsJson, CancellationToken ct)
+    {
+        var tools = server.ServerOptions.ToolCollection;
+        if (tools is null || !tools.TryGetPrimitive(toolName, out var tool))
+        {
+            return ToolResult.Failure($"Tool '{toolName}' is not registered on this server");
+        }
+
+        var args = string.IsNullOrWhiteSpace(argsJson)
+            ? null
+            : JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(argsJson);
+
+        var request = new RequestContext<CallToolRequestParams>(server, context.JsonRpcRequest, new CallToolRequestParams { Name = toolName, Arguments = args });
         try
         {
-            var metrics = orchestrationService.ResourceManager.GetMetrics();
-            
-            return new
+            var response = await tool.InvokeAsync(request, ct);
+            var text = string.Join("\n", (response.Content ?? []).OfType<TextContentBlock>().Select(c => c.Text));
+            if (response.StructuredContent is not null && string.IsNullOrEmpty(text))
             {
-                Success = true,
-                MaxConcurrency = metrics.MaxConcurrency,
-                CurrentActiveOperations = metrics.CurrentActiveOperations,
-                TotalOperationsExecuted = metrics.TotalOperationsExecuted,
-                AverageWaitTimeMs = Math.Round(metrics.AverageWaitTime.TotalMilliseconds, 2),
-                PeakConcurrency = metrics.PeakConcurrency,
-                ThrottleCount = metrics.ThrottleCount,
-                UtilizationPercentage = Math.Round(metrics.UtilizationPercentage, 2)
-            };
+                text = response.StructuredContent.ToString() ?? string.Empty;
+            }
+            return response.IsError == true ? ToolResult.Failure(text) : ToolResult.Success(text);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to get resource metrics");
-            return new 
-            { 
-                Success = false, 
-                Error = ex.Message
-            };
+            return ToolResult.Failure($"{toolName}: {ex.Message}");
         }
     }
 
-    [McpServerTool(Name = "configure_resource_limits", Idempotent = false, ReadOnly = false, Destructive = false, OpenWorld = false)]
-    [Description("Configures resource limits for concurrent operation execution.")]
-    public static async Task<object> ConfigureResourceLimits(
-        IOrchestrationService orchestrationService,
-        ILogger<OrchestrationToolsLogCategory> logger,
-        [Description("Maximum number of concurrent operations")] int maxConcurrency,
-        [Description("Optional CPU usage threshold percentage (0-100)")] int? cpuThreshold = null,
-        [Description("Optional memory usage threshold in MB")] int? memoryThresholdMb = null,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            logger.LogInformation("Configuring resource limits: MaxConcurrency={Max}", maxConcurrency);
-            
-            orchestrationService.ResourceManager.MaxConcurrency = maxConcurrency;
-            
-            if (cpuThreshold.HasValue)
-            {
-                // Note: CPU threshold configuration would require additional implementation
-                logger.LogInformation("CPU threshold configured: {Threshold}%", cpuThreshold.Value);
-            }
-            
-            if (memoryThresholdMb.HasValue)
-            {
-                // Note: Memory threshold configuration would require additional implementation
-                logger.LogInformation("Memory threshold configured: {Threshold}MB", memoryThresholdMb.Value);
-            }
-            
-            var metrics = orchestrationService.ResourceManager.GetMetrics();
-            
-            return new
-            {
-                Success = true,
-                MaxConcurrency = metrics.MaxConcurrency,
-                CpuThresholdConfigured = cpuThreshold.HasValue,
-                MemoryThresholdConfigured = memoryThresholdMb.HasValue,
-                Message = $"Resource limits configured successfully. Max concurrency set to {maxConcurrency}."
-            };
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to configure resource limits");
-            return new 
-            { 
-                Success = false, 
-                Error = ex.Message
-            };
-        }
-    }
+    private static string SerializeArgs(Dictionary<string, JsonElement>? args)
+        => args is null ? string.Empty : JsonSerializer.Serialize(args);
 }
 
-/// <summary>
-/// Input model for tool operations in parallel execution
-/// </summary>
+/// <summary>One operation for <c>orchestrate_parallel</c>.</summary>
 public record ToolOperationInput(
-    string ToolName,
-    string Arguments);
+    [property: Description("Name of a tool on this server")] string ToolName,
+    [property: Description("Arguments object for that tool")] Dictionary<string, JsonElement>? Arguments = null);
 
-/// <summary>
-/// Input model for workflow steps
-/// </summary>
+/// <summary>One step for <c>execute_workflow</c>.</summary>
 public record WorkflowStepInput(
-    string Name,
-    string ToolName,
-    string Arguments,
-    string? Condition = null);
+    [property: Description("Unique step name")] string Name,
+    [property: Description("Name of a tool on this server")] string ToolName,
+    [property: Description("Arguments object for that tool")] Dictionary<string, JsonElement>? Arguments = null,
+    [property: Description("Step names that must complete before this one")] IReadOnlyList<string>? DependsOn = null);
 
-/// <summary>
-/// Dynamic workflow implementation for runtime workflow creation
-/// </summary>
-public record DynamicWorkflow(
-    string Name,
-    List<WorkflowStep> Steps,
-    Dictionary<string, object> InitialContext,
-    bool FailFast) : IWorkflow
+internal sealed class ToolWorkflow(string name, List<ToolWorkflowStep> steps) : IWorkflow
 {
-    public IReadOnlyList<WorkflowStep> GetSteps() => Steps.AsReadOnly();
-    public WorkflowContext CreateContext()
+    public string Name => name;
+    public List<ToolWorkflowStep> StepList => steps;
+    public IEnumerable<IWorkflowStep> Steps => steps;
+}
+
+internal sealed class ToolWorkflowStep(WorkflowStepInput input, Func<string, CancellationToken, Task<ToolResult>> invoke) : IWorkflowStep
+{
+    public string Name => input.Name;
+    public bool CanExecuteInParallel => true;
+    public IEnumerable<string> DependsOn => input.DependsOn ?? [];
+    public ToolResult? LastResult { get; private set; }
+
+    public async Task<StepResult> ExecuteAsync(WorkflowContext context, CancellationToken cancellationToken = default)
     {
-        var context = new WorkflowContext();
-        foreach (var kvp in InitialContext)
-        {
-            context.Set(kvp.Key, kvp.Value);
-        }
-        return context;
+        var argsJson = input.Arguments is null ? string.Empty : JsonSerializer.Serialize(input.Arguments);
+        LastResult = await invoke(argsJson, cancellationToken);
+        context.Set(input.Name, LastResult);
+        return new StepResult(LastResult.IsSuccess, LastResult.Error);
     }
 }

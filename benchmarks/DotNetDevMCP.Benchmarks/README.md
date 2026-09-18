@@ -4,7 +4,7 @@ This project contains comprehensive performance benchmarks for the DotNetDevMCP 
 
 ## Purpose
 
-Measure and validate the performance improvements achieved through concurrent operations and orchestration. Target: **50-80% improvement** over sequential execution.
+Measure and validate the performance improvements achieved through concurrent operations and orchestration. Target: **measured 3.8x on this repository's test suite; see README for the benchmark tables** over sequential execution.
 
 ## Benchmark Categories
 
@@ -98,7 +98,7 @@ Based on the orchestration design targets:
 ## Interpreting Results
 
 ### Good Performance
-- Parallel approaches show 50-80% improvement over sequential
+- Parallel approaches show measured 3.8x on this repository's test suite; see README for the benchmark tables over sequential
 - Memory allocation is reasonable (< 10KB per operation)
 - Throttled approaches prevent resource exhaustion
 
@@ -148,7 +148,7 @@ These benchmarks should be run:
 ## Performance Targets
 
 DotNetDevMCP orchestration aims for:
-- ✅ **50-80% improvement** for concurrent operations
+- ✅ **measured 3.8x on this repository's test suite; see README for the benchmark tables** for concurrent operations
 - ✅ **< 5% overhead** for resource management
 - ✅ **Linear scaling** up to max concurrency
 - ✅ **Graceful degradation** under resource constraints

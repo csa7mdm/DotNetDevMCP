@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using DotNetDevMCP.Analysis.Services;
 using DotNetDevMCP.Analysis.Models;

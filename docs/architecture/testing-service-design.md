@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Testing Service provides high-performance parallel test execution for .NET test frameworks (xUnit, NUnit, MSTest). It leverages the orchestration components to achieve 50-80% faster test runs compared to sequential execution.
+The Testing Service provides high-performance parallel test execution for .NET test frameworks (xUnit, NUnit, MSTest). It leverages the orchestration components to achieve measured 3.8x on this repository's test suite; see README for the benchmark tables test runs compared to sequential execution.
 
 ## Goals
 
@@ -277,7 +277,7 @@ public class TestingServiceOptions
 ## Success Criteria
 
 - ✅ Support xUnit, NUnit, and MSTest
-- ✅ Achieve 50-80% speedup on parallel-safe test suites
+- ✅ Achieve measured 3.8x on this repository's test suite; see README for the benchmark tables on parallel-safe test suites
 - ✅ Accurate result aggregation (100% reliability)
 - ✅ Graceful handling of test failures and timeouts
 - ✅ Progress reporting during execution

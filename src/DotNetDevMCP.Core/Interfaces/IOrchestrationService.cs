@@ -24,6 +24,11 @@ public interface IOrchestrationService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Registers (or replaces) a named tool that <see cref="ExecuteParallelAsync"/> can dispatch to
+    /// </summary>
+    void RegisterTool(string toolName, Func<string, CancellationToken, Task<ToolResult>> toolFunc);
+
+    /// <summary>
     /// Monitors and manages resource allocation for concurrent operations
     /// </summary>
     IResourceManager ResourceManager { get; }

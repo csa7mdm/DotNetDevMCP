@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Ahmed Mustafa
 
 using DotNetDevMCP.Orchestration;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace DotNetDevMCP.Core.Tests;
@@ -281,7 +281,7 @@ public class ResourceManagerTests
         // Arrange
         var resourceManager = new ResourceManager(maxConcurrency: 3);
         var barrier = new SemaphoreSlim(0, 3);
-        var releaseBarrier = new SemaphoreSlim(0, 1);
+        var releaseBarrier = new SemaphoreSlim(0, 3);
 
         // Act - Start long-running operations
         var operations = Enumerable.Range(0, 3).Select<int, Task>(i => Task.Run(async () =>
@@ -292,7 +292,7 @@ public class ResourceManagerTests
                 await releaseBarrier.WaitAsync(); // Wait for release signal
                 return i;
             });
-        }));
+        })).ToArray(); // materialize: a lazy Select would never start the tasks
 
         // Wait for all operations to start
         for (int i = 0; i < 3; i++)

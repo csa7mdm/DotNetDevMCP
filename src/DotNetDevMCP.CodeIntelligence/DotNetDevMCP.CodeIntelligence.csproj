@@ -10,32 +10,32 @@
 
   <ItemGroup>
     <!-- Roslyn / Code Analysis -->
-    <PackageReference Include="Microsoft.CodeAnalysis.Common" Version="5.0.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.0.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="5.0.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Common" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" />
 
     <!-- Decompilation -->
-    <PackageReference Include="ICSharpCode.Decompiler" Version="9.1.0.7988" />
+    <PackageReference Include="ICSharpCode.Decompiler" />
 
     <!-- Git Integration -->
-    <PackageReference Include="LibGit2Sharp" Version="0.32.0" />
+    <PackageReference Include="LibGit2Sharp" />
 
     <!-- Diff -->
-    <PackageReference Include="DiffPlex" Version="1.9.0" />
+    <PackageReference Include="DiffPlex" />
 
     <!-- File System -->
-    <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" Version="10.0.2" />
+    <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" />
 
     <!-- MCP Protocol -->
-    <PackageReference Include="ModelContextProtocol" Version="0.4.0-preview.3" />
+    <PackageReference Include="ModelContextProtocol" />
 
     <!-- NuGet -->
-    <PackageReference Include="NuGet.Protocol" Version="8.0.0" />
+    <PackageReference Include="NuGet.Protocol" />
 
     <!-- Reflection -->
-    <PackageReference Include="System.Reflection.Metadata" Version="10.0.0" />
-    <PackageReference Include="System.Reflection.MetadataLoadContext" Version="10.0.0" />
+    <PackageReference Include="System.Reflection.Metadata" />
+    <PackageReference Include="System.Reflection.MetadataLoadContext" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,7 +1,10 @@
+using ModelContextProtocol.Server;
 // Copyright (c) 2025 Ahmed Mustafa
 
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol;
+using DotNetDevMCP.Core.Interfaces;
+using DotNetDevMCP.Core.Models;
 using DotNetDevMCP.Testing;
 using DotNetDevMCP.Testing.Mcp.Tools;
 
@@ -22,7 +25,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddSingleton<TestingService>(sp =>
         {
-            var orchestration = sp.GetRequiredService<Orchestration.OrchestrationService>();
+            var orchestration = sp.GetRequiredService<IOrchestrationService>();
             var testingConfig = config ?? TestingServiceConfig.Default;
             return new TestingService(orchestration, testingConfig);
         });

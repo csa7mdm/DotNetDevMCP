@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using Microsoft.Build.Evaluation;
 using Microsoft.Build.Framework;

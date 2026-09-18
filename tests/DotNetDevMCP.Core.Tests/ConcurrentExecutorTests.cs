@@ -2,7 +2,7 @@
 
 using DotNetDevMCP.Core.Models;
 using DotNetDevMCP.Orchestration;
-using FluentAssertions;
+using AwesomeAssertions;
 using Xunit;
 
 namespace DotNetDevMCP.Core.Tests;
@@ -133,13 +133,13 @@ public class ConcurrentExecutorTests
     {
         // Arrange
         var executor = new ConcurrentExecutor();
-        var progressReports = new List<ExecutionProgress>();
+        var progressReports = new System.Collections.Concurrent.ConcurrentQueue<ExecutionProgress>();
         var lockObj = new object();
-        var progress = new Progress<ExecutionProgress>(p =>
+        var progress = new SyncProgress<ExecutionProgress>(p =>
         {
             lock (lockObj)
             {
-                progressReports.Add(p);
+                progressReports.Enqueue(p);
             }
         });
 
@@ -328,8 +328,8 @@ public class ConcurrentExecutorTests
     {
         // Arrange
         var executor = new ConcurrentExecutor();
-        var progressReports = new List<ExecutionProgress>();
-        var progress = new Progress<ExecutionProgress>(p => progressReports.Add(p));
+        var progressReports = new System.Collections.Concurrent.ConcurrentQueue<ExecutionProgress>();
+        var progress = new SyncProgress<ExecutionProgress>(p => progressReports.Enqueue(p));
 
         var operations = Enumerable.Range(0, 10)
             .Select<int, Func<CancellationToken, Task<int>>>(i => async ct =>
@@ -347,8 +347,8 @@ public class ConcurrentExecutorTests
         result.SuccessfulOperations.Should().Be(6);
         result.Errors.Should().HaveCount(4); // indices 0, 3, 6, 9
 
-        var lastProgress = progressReports.Last();
-        lastProgress.CompletedOperations.Should().Be(10);
-        lastProgress.FailedOperations.Should().Be(4);
+        // Reports from concurrent operations arrive in no particular order; the high-water marks must be right.
+        progressReports.Max(p => p.CompletedOperations).Should().Be(10);
+        progressReports.Max(p => p.FailedOperations).Should().Be(4);
     }
 }

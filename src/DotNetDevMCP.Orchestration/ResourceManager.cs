@@ -44,13 +44,10 @@ public class ResourceManager : IResourceManager, IDisposable
             {
                 if (value != _maxConcurrency)
                 {
-                    var oldSemaphore = _semaphore;
+                    // In-flight operations hold a reference to the old semaphore and release *that* one
+                    // (see ExecuteWithThrottlingAsync), so it must not be disposed here; GC reclaims it.
                     _semaphore = new SemaphoreSlim(value, value);
                     _maxConcurrency = value;
-
-                    // Dispose old semaphore immediately - operations already holding the semaphore
-                    // will complete normally, and new operations will use the new semaphore
-                    oldSemaphore.Dispose();
                 }
             }
         }
@@ -67,7 +64,9 @@ public class ResourceManager : IResourceManager, IDisposable
         Func<Task<T>> operation,
         CancellationToken cancellationToken = default)
     {
-        await _semaphore.WaitAsync(cancellationToken);
+        // Capture the instance: MaxConcurrency may swap _semaphore while this operation runs.
+        var semaphore = _semaphore;
+        await semaphore.WaitAsync(cancellationToken);
 
         Interlocked.Increment(ref _currentlyExecuting);
         var stopwatch = Stopwatch.StartNew();
@@ -99,7 +98,7 @@ public class ResourceManager : IResourceManager, IDisposable
         finally
         {
             Interlocked.Decrement(ref _currentlyExecuting);
-            _semaphore.Release();
+            semaphore.Release();
         }
     }
 

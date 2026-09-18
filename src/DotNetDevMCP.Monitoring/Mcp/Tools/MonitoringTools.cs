@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using DotNetDevMCP.Monitoring.Services;
 using DotNetDevMCP.Monitoring.Models;
@@ -126,7 +127,7 @@ public sealed class MonitoringTools(
             GC.Collect(generation, GCCollectionMode.Forced, blocking: false, compacting: true);
         }
         
-        return Task.FromResult(new
+        return Task.FromResult<object>(new
         {
             Generation = generation,
             Blocking = blocking,

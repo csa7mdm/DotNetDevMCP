@@ -1,7 +1,9 @@
+using ModelContextProtocol.Server;
 // Copyright (c) 2025 Ahmed Mustafa
 
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol;
+using DotNetDevMCP.Core.Interfaces;
 using DotNetDevMCP.Orchestration;
 using DotNetDevMCP.Orchestration.Mcp.Tools;
 

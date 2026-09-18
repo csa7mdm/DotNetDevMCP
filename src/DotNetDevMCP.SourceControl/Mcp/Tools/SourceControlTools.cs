@@ -1,3 +1,6 @@
+using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Server;
+using System.ComponentModel;
 // Copyright (c) 2025 Ahmed Mustafa
 
 using ModelContextProtocol;
@@ -198,7 +201,7 @@ public static partial class SourceControlTools
         GitService gitService,
         ILogger<SourceControlToolsLogCategory> logger,
         [Description("Path to the git repository")] string repoPath,
-        [Description("List of specific files to stage. If empty, stages all changes.")] IEnumerable<string>? files = null,
+        [Description("Specific files to stage. Empty stages all changes.")] string[]? files = null,
         CancellationToken cancellationToken = default)
     {
         try
