@@ -55,7 +55,7 @@ Pass `--load-solution <path>` to have Roslyn load your solution at startup, or l
 | Group | Tools | What they do |
 |---|---|---|
 | Code intelligence (Roslyn) | 21 | Load a solution; search and view definitions; find references and implementations; add, overwrite, move and rename members; manage usings and attributes; find-and-replace with syntax awareness; complexity analysis; undo. Forked from [SharpTools](https://github.com/kooshi/SharpToolsMCP). |
-| Testing | 3 | Discover tests, run them with a chosen strategy (`Sequential`, `FullParallel`, `AssemblyLevelParallel`, `SmartParallel`), run every test project in a solution. Real `dotnet test`, parsed results, per-test errors and stack traces. |
+| Testing | 3 | `dotnet_test_run` (one `dotnet test` per project or solution, TRX parsed into per-test results with messages and stack traces), `dotnet_test_discover`, and `dotnet_test_affected`: Roslyn walks references from your changed files to the test methods that reach them, and runs only those. |
 | Build | 5 | `dotnet build`, `restore`, `clean`, build with MSBuild properties, scan for outdated packages. Structured error/warning output. |
 | Analysis | 6 | Project dependency graph, circular-dependency detection, quality metrics, health check. |
 | Git | 10 | Status, branches, checkout, stage, commit, diff, log, push, pull. |
@@ -65,7 +65,7 @@ Pass `--load-solution <path>` to have Roslyn load your solution at startup, or l
 Things you can say to an agent with this server attached:
 
 - "Load `MyApp.sln`, find every implementation of `IOrderRepository`, and rename `GetById` to `FindById` across the solution."
-- "Run the tests in `MyApp.Tests` in parallel and show me only the failures with stack traces."
+- "Run only the tests affected by what I just changed, and show me the failures with stack traces."
 - "Build the API and the worker projects at the same time, then run both test projects."
 - "Which projects have circular dependencies?"
 
@@ -81,7 +81,7 @@ The tools above are individually useful. The orchestrator is what makes them fas
     "steps": [
       { "name": "build-tests",  "toolName": "dotnet_build",    "arguments": { "projectPath": "tests/Api.Tests/Api.Tests.csproj" } },
       { "name": "build-worker", "toolName": "dotnet_build",    "arguments": { "projectPath": "src/Worker/Worker.csproj" } },
-      { "name": "test-api",     "toolName": "dotnet_test_run", "arguments": { "assemblyPath": "tests/Api.Tests/Api.Tests.csproj", "strategy": "SmartParallel" }, "dependsOn": ["build-tests"] },
+      { "name": "test-api",     "toolName": "dotnet_test_run", "arguments": { "path": "tests/Api.Tests/Api.Tests.csproj", "noBuild": true }, "dependsOn": ["build-tests"] },
       { "name": "deps",         "toolName": "dotnet_detect_circular_dependencies", "arguments": { "projectPath": "src/Api/Api.csproj" } }
     ]
   }
@@ -90,7 +90,7 @@ The tools above are individually useful. The orchestrator is what makes them fas
 
 `build-tests`, `build-worker` and `deps` start immediately; `test-api` waits for `build-tests`. Steps are throttled by a resource manager (default: processor count, adjustable with `configure_resource_limits`). Failures are reported per step; a failed dependency stops its dependents.
 
-Under the hood this is the same `ConcurrentExecutor` / `WorkflowEngine` / `ResourceManager` that the testing service uses. They are plain C# classes in `DotNetDevMCP.Orchestration` and can be used without MCP.
+Under the hood this is `ConcurrentExecutor` / `WorkflowEngine` / `ResourceManager`, plain C# classes in `DotNetDevMCP.Orchestration` that can be used without MCP.
 
 ## Numbers
 
@@ -109,14 +109,19 @@ Measured with BenchmarkDotNet on an i7-10750H, .NET 10.0.9. The orchestration be
 | Sequential | 308 ms | 1.00 |
 | `WorkflowEngine` | 185 ms | 0.60 |
 
-Running this repository's own test project through the MCP tool (44 xUnit tests, one `dotnet test --filter` per test):
+## Affected tests
 
-| `dotnet_test_run` strategy | Wall time |
-|---|---:|
-| `Sequential` | 83.8 s |
-| `SmartParallel` | 22.0 s |
+After an edit, the agent usually reruns the whole suite. `dotnet_test_affected` asks Roslyn instead: take the symbols declared in the changed files, follow references (up to `maxDepth` hops, default 3) until you land in a method with `[Fact]`, `[Theory]`, `[Test]`, `[TestCase]` or `[TestMethod]`, then run exactly those with `dotnet test --filter`. Changed files default to the git working tree, or `gitBase: "main"` for a branch. `dryRun: true` lists the tests without running them.
 
-Your numbers will depend on how many test processes your machine can run at once. Reproduce with `dotnet run -c Release --project benchmarks/DotNetDevMCP.Benchmarks`.
+On this repository, editing `ConcurrentExecutor.cs` selects 22 of 44 tests (the `ConcurrentExecutorTests` plus the `OrchestrationServiceTests` that reach it through `OrchestrationService`). Measured through the MCP tool, build included, i7-10750H:
+
+| | Tests | Wall |
+|---|---:|---:|
+| `dotnet test` from a shell | 44 | 9 s |
+| `dotnet_test_run` | 44 | 8.3 s |
+| `dotnet_test_affected` (change to `ConcurrentExecutor.cs`) | 22 | 6.6 s |
+
+The suite here is small, so the saving is small; the selection scales with the ratio of touched code to suite size, not with machine cores. Selection itself (the Roslyn reference walk) takes 4-6 s on this solution; `dryRun: true` shows what it picked and why (`via`). Reproduce the engine benchmarks with `dotnet run -c Release --project benchmarks/DotNetDevMCP.Benchmarks`.
 
 ## Build from source
 
@@ -136,14 +141,14 @@ To use a local build from an MCP client, point `command` at `src/DotNetDevMCP.Se
 src/
   DotNetDevMCP.Server/           entry point; stdio or HTTP; packs as the `dotnetdevmcp` tool
   DotNetDevMCP.CodeIntelligence/ Roslyn tools (SharpTools fork)
-  DotNetDevMCP.Testing/          test discovery + execution strategies
+  DotNetDevMCP.Testing/          dotnet test runner, TRX parsing, Roslyn affected-test selection
   DotNetDevMCP.Build/            dotnet build/restore/clean
   DotNetDevMCP.Analysis/         dependency graph, quality metrics
   DotNetDevMCP.SourceControl/    git
   DotNetDevMCP.Orchestration/    ConcurrentExecutor, WorkflowEngine, ResourceManager, orchestration tools
   DotNetDevMCP.Monitoring/       process metrics
   DotNetDevMCP.Core/             interfaces and models shared by the above
-tests/                           xUnit tests for the orchestration core
+tests/                           xUnit tests for the orchestration core and the TRX parser
 benchmarks/                      BenchmarkDotNet suite
 docs/architecture/               design notes and ADRs
 ```
@@ -154,7 +159,7 @@ Built on the official [MCP C# SDK](https://github.com/modelcontextprotocol/cshar
 
 0.1.0. The Roslyn tools are mature (they come from SharpTools). Testing, build, git and orchestration are newer and have been exercised on this repository and a few others; expect rough edges on unusual project layouts. Issues and PRs welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Known gaps: `dotnet_test_run` calls `dotnet test --no-build`, so build the test project first (Debug is the default output it looks for). NUnit/MSTest discovery goes through `dotnet test --list-tests` and works, but the per-test filter syntax is tuned for xUnit; `dotnet_test_run` runs one `dotnet test` process per test, which is what makes parallelism pay off but adds startup cost for very small suites.
+Known gaps: `dotnet_test_affected` follows C# references only (no reflection, no DI-by-convention, no string-keyed lookups), so a change reached only through those paths will not select the test; use `maxDepth` and `dryRun` to check what it picks. Test attribute detection covers xUnit, NUnit and MSTest by attribute name. Passing more than a few hundred exact test names to `dotnet test --filter` will exceed the command-line limit; run the project instead.
 
 ## Credits and license
 

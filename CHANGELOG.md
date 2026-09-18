@@ -3,6 +3,23 @@
 All notable changes to DotNetDevMCP are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [0.2.0] - Unreleased
+
+### Changed
+- `dotnet_test_run` now runs one `dotnet test` per project or solution and parses the TRX it writes (per-test outcome, duration, message, stack trace, stdout). The four execution strategies and the process-per-test runner are gone: plain `dotnet test` on this repo's 44 tests takes 9 s, the old "SmartParallel" runner took 22 s. `strategy`, `maxParallelTests`, `timeoutSeconds` and `continueOnFailure` parameters removed; `assemblyPath` renamed to `path`; `filter` and `noBuild` added.
+- `dotnet_test_run_solution` removed; pass a `.sln` to `dotnet_test_run`.
+- Testing project references CodeIntelligence (for the Roslyn workspace) and no longer depends on `xunit.runner.utility` or `Microsoft.TestPlatform.ObjectModel`.
+
+### Added
+- `dotnet_test_affected`: walks Roslyn references from the symbols declared in changed files to the test methods that reach them, and runs only those. Changed files default to the git working tree (`gitBase` for a branch diff). `dryRun` lists without running.
+- Unit tests for the TRX parser.
+
+### Fixed
+- Child processes (`dotnet`, `git`) inherited the server's stdin, which in stdio mode is the MCP pipe; `git status` blocked on it for about two minutes per call. All three std handles are now redirected and stdin is closed.
+
+### Removed
+- `TestingServiceDemo` and `RealTestExecutionDemo` samples (they demonstrated the removed strategies).
+
 ## [0.1.0] - 2026-09-17
 
 First release that builds, tests and runs end to end. Earlier commits on `main` were never released.

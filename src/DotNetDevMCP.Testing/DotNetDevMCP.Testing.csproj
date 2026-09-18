@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -8,13 +8,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DotNetDevMCP.Core\DotNetDevMCP.Core.csproj" />
-    <ProjectReference Include="..\DotNetDevMCP.Orchestration\DotNetDevMCP.Orchestration.csproj" />
+    <ProjectReference Include="..\DotNetDevMCP.CodeIntelligence\DotNetDevMCP.CodeIntelligence.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="xunit.runner.utility" />
-    <PackageReference Include="xunit.extensibility.execution" />
-    <PackageReference Include="Microsoft.TestPlatform.ObjectModel" />
     <PackageReference Include="ModelContextProtocol" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
