@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
   "name": "io.github.csa7mdm/dotnetdevmcp",
   "description": "MCP server for .NET development: Roslyn code intelligence, build, parallel test execution, git, and a DAG orchestrator that runs its own tools concurrently.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "repository": {
     "url": "https://github.com/csa7mdm/DotNetDevMCP",
     "source": "github"
@@ -12,7 +12,7 @@
       "registryType": "nuget",
       "registryBaseUrl": "https://api.nuget.org/v3/index.json",
       "identifier": "DotNetDevMCP",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "transport": { "type": "stdio" },
       "packageArguments": [
         {

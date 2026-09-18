@@ -43,10 +43,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "benchmarks", "benchmarks", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DotNetDevMCP.Benchmarks", "benchmarks\DotNetDevMCP.Benchmarks\DotNetDevMCP.Benchmarks.csproj", "{FAC3E5A6-9710-4D33-A779-2DCE3F9172B6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestingServiceDemo", "samples\TestingServiceDemo\TestingServiceDemo.csproj", "{95418089-1299-4A82-8369-43DAC789DBC5}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RealTestExecutionDemo", "samples\RealTestExecutionDemo\RealTestExecutionDemo.csproj", "{455A1603-46F6-4C6B-B455-325FE4B0AC72}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -117,14 +113,6 @@ Global
 		{FAC3E5A6-9710-4D33-A779-2DCE3F9172B6}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FAC3E5A6-9710-4D33-A779-2DCE3F9172B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FAC3E5A6-9710-4D33-A779-2DCE3F9172B6}.Release|Any CPU.Build.0 = Release|Any CPU
-		{95418089-1299-4A82-8369-43DAC789DBC5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{95418089-1299-4A82-8369-43DAC789DBC5}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{95418089-1299-4A82-8369-43DAC789DBC5}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{95418089-1299-4A82-8369-43DAC789DBC5}.Release|Any CPU.Build.0 = Release|Any CPU
-		{455A1603-46F6-4C6B-B455-325FE4B0AC72}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{455A1603-46F6-4C6B-B455-325FE4B0AC72}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{455A1603-46F6-4C6B-B455-325FE4B0AC72}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{455A1603-46F6-4C6B-B455-325FE4B0AC72}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -146,7 +134,5 @@ Global
 		{0C372D42-3E00-43F1-BAF1-1FF87A67BB5D} = {84EDF5DB-2F0D-418C-8225-46D3FDEBE26B}
 		{D89FB4E2-69CE-47E8-99E6-880D2E1E6363} = {CCD7F81D-222C-4FF4-934F-B398E22D9379}
 		{FAC3E5A6-9710-4D33-A779-2DCE3F9172B6} = {68C59694-BB64-436D-9A49-7F029E5976D7}
-		{95418089-1299-4A82-8369-43DAC789DBC5} = {CCD7F81D-222C-4FF4-934F-B398E22D9379}
-		{455A1603-46F6-4C6B-B455-325FE4B0AC72} = {CCD7F81D-222C-4FF4-934F-B398E22D9379}
 	EndGlobalSection
 EndGlobal
