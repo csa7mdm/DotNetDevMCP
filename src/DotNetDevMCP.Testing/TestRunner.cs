@@ -20,7 +20,7 @@ public sealed class TestRunner
     public async Task<IReadOnlyList<TestCase>> DiscoverAsync(string projectPath, string? filter, CancellationToken ct)
     {
         projectPath = Path.GetFullPath(projectPath);
-        var (exit, stdout, stderr) = await RunDotnetAsync($"test \"{projectPath}\" --list-tests{FilterArg(filter)}", ct, DirectoryOf(projectPath));
+        var (exit, stdout, stderr, _) = await RunDotnetAsync($"test \"{projectPath}\" --list-tests{FilterArg(filter)}", ct, DirectoryOf(projectPath));
         if (exit != 0)
         {
             throw new InvalidOperationException($"dotnet test --list-tests failed:\n{Tail(stdout + stderr)}");
@@ -41,12 +41,14 @@ public sealed class TestRunner
 
     /// <param name="testNames">Fully qualified names; empty runs everything the filter allows.</param>
     /// <param name="framework">Target framework to run (e.g. net10.0); null runs every TFM the projects target.</param>
-    public async Task<TestRunSummary> RunAsync(string projectOrSolutionPath, string? filter, IReadOnlyCollection<string>? testNames, bool noBuild, string? framework, CancellationToken ct)
+    /// <param name="timeoutSeconds">A run must always return: injected faults or a real deadlock can hang a test forever, which
+    /// would hang the MCP tool call with it. Past this, the whole process tree is killed and a failed summary is returned.</param>
+    public async Task<TestRunSummary> RunAsync(string projectOrSolutionPath, string? filter, IReadOnlyCollection<string>? testNames, bool noBuild, string? framework, CancellationToken ct, int timeoutSeconds = 600)
     {
         projectOrSolutionPath = Path.GetFullPath(projectOrSolutionPath);
         return UsesTestingPlatform(projectOrSolutionPath)
-            ? await RunTestingPlatformAsync(projectOrSolutionPath, filter, testNames, noBuild, framework, ct)
-            : await RunVsTestAsync(projectOrSolutionPath, filter, testNames, noBuild, framework, ct);
+            ? await RunTestingPlatformAsync(projectOrSolutionPath, filter, testNames, noBuild, framework, ct, timeoutSeconds)
+            : await RunVsTestAsync(projectOrSolutionPath, filter, testNames, noBuild, framework, ct, timeoutSeconds);
     }
 
     /// <summary>
@@ -78,12 +80,12 @@ public sealed class TestRunner
     private const int MtpInvalidCommandLine = 5;
     private const int MtpZeroTestsRan = 8;
 
-    private async Task<TestRunSummary> RunTestingPlatformAsync(string path, string? filter, IReadOnlyCollection<string>? testNames, bool noBuild, string? framework, CancellationToken ct)
+    private async Task<TestRunSummary> RunTestingPlatformAsync(string path, string? filter, IReadOnlyCollection<string>? testNames, bool noBuild, string? framework, CancellationToken ct, int timeoutSeconds)
     {
         var target = path.EndsWith("proj", StringComparison.OrdinalIgnoreCase) ? "--project"
             : Directory.Exists(path) ? "--directory" : "--solution";
         var sw = Stopwatch.StartNew();
-        (int ExitCode, string Stdout, string Stderr) run = default;
+        (int ExitCode, string Stdout, string Stderr, bool TimedOut) run = default;
         foreach (var xunit in IsXunitByPath.TryGetValue(path, out var known) ? new[] { known } : new[] { true, false })
         {
             var args = new StringBuilder($"test {target} \"{path}\"");
@@ -92,11 +94,16 @@ public sealed class TestRunner
             args.Append(xunit ? " --report-xunit-trx" : " --report-trx");
             args.Append(TestingPlatformNameFilter(testNames, xunit));
             if (!string.IsNullOrWhiteSpace(filter)) args.Append(' ').Append(filter); // the framework's own filter options, verbatim
-            run = await RunDotnetAsync(args.ToString(), ct, DirectoryOf(path));
-            if (run.ExitCode != MtpInvalidCommandLine) { IsXunitByPath[path] = xunit; break; }
+            run = await RunDotnetAsync(args.ToString(), ct, DirectoryOf(path), TimeSpan.FromSeconds(timeoutSeconds));
+            if (run.ExitCode != MtpInvalidCommandLine) { if (!run.TimedOut) IsXunitByPath[path] = xunit; break; }
             noBuild = true; // the first attempt already built
         }
         sw.Stop();
+
+        if (run.TimedOut)
+        {
+            return TestRunSummary.Failed(TimeoutMessage(timeoutSeconds, run.Stdout + "\n" + run.Stderr), sw.Elapsed);
+        }
 
         // No --results-directory: repos often set their own through TestingPlatformCommandLineArguments and MTP rejects a second one.
         // Every module prints the files it wrote under "file artifacts produced", one "- <path>" per line.
@@ -112,6 +119,46 @@ public sealed class TestRunner
             return TestRunSummary.Failed(run.ExitCode == MtpZeroTestsRan ? "Zero tests ran (the filter matched nothing)." : Tail(run.Stdout + run.Stderr), sw.Elapsed);
         }
         return TestRunSummary.Merge(trxFiles.Select(ParseTrx)) with { Duration = sw.Elapsed };
+    }
+
+    /// <summary>
+    /// Message for a killed run: names the modules Microsoft.Testing.Platform reported starting but never reported finishing
+    /// (the likely hang), falling back to the tail of the output if the format doesn't match (different MTP version, VSTest mixed in).
+    /// </summary>
+    private static string TimeoutMessage(int timeoutSeconds, string output)
+    {
+        var unfinished = UnfinishedModules(output);
+        var detail = unfinished.Count > 0 ? $"Started but never finished: {string.Join(", ", unfinished)}" : Tail(output);
+        return $"Test run timed out after {timeoutSeconds}s and likely hangs. {detail}";
+    }
+
+    /// <summary>
+    /// MTP prints "Running tests from &lt;path&gt;" when a module starts and "&lt;path&gt; (&lt;tfm&gt;|&lt;arch&gt;) passed|failed (...)"
+    /// when it ends. A module with a start line and no matching end line is the one still running when the run was killed.
+    /// </summary>
+    public static IReadOnlyList<string> UnfinishedModules(string output)
+    {
+        const string StartPrefix = "Running tests from ";
+        var started = new List<string>();
+        var finished = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in output.Split('\n'))
+        {
+            var line = raw.Trim();
+            if (line.StartsWith(StartPrefix, StringComparison.Ordinal))
+            {
+                started.Add(line[StartPrefix.Length..].Trim());
+                continue;
+            }
+            var openParen = line.IndexOf(" (", StringComparison.Ordinal);
+            var closeParen = openParen < 0 ? -1 : line.IndexOf(')', openParen);
+            if (closeParen < 0 || !line[(openParen + 2)..closeParen].Contains('|')) continue;
+            var rest = line[(closeParen + 1)..].TrimStart();
+            if (rest.StartsWith("passed", StringComparison.OrdinalIgnoreCase) || rest.StartsWith("failed", StringComparison.OrdinalIgnoreCase))
+            {
+                finished.Add(line[..openParen].Trim());
+            }
+        }
+        return started.Where(s => !finished.Contains(s)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     /// <summary>Exact-name filter for MTP. Past the Windows command-line limit it widens to classes, then to the whole target (a superset, never fewer tests).</summary>
@@ -131,7 +178,7 @@ public sealed class TestRunner
 
     private const int MaxFilterChars = 24_000; // Windows caps a command line at 32,767 chars
 
-    private async Task<TestRunSummary> RunVsTestAsync(string projectOrSolutionPath, string? filter, IReadOnlyCollection<string>? testNames, bool noBuild, string? framework, CancellationToken ct)
+    private async Task<TestRunSummary> RunVsTestAsync(string projectOrSolutionPath, string? filter, IReadOnlyCollection<string>? testNames, bool noBuild, string? framework, CancellationToken ct, int timeoutSeconds)
     {
         var resultsDir = Path.Combine(Path.GetTempPath(), "dotnetdevmcp-trx", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(resultsDir);
@@ -148,17 +195,27 @@ public sealed class TestRunner
         var args = new StringBuilder($"test \"{projectOrSolutionPath}\" --logger trx --results-directory \"{resultsDir}\"");
         if (noBuild) args.Append(" --no-build");
         if (!string.IsNullOrWhiteSpace(framework)) args.Append($" --framework {framework}");
+        // Named per-test, not per-run: the process timeout below already bounds the whole run. Naming the hanging test needs a
+        // shorter per-test window, capped at the run timeout so it can never itself become the reason nothing finishes in time.
+        var hangTimeout = Math.Min(120, timeoutSeconds);
+        args.Append($" --blame-hang --blame-hang-timeout {hangTimeout}s");
         args.Append(FilterArg(fullFilter));
 
         var sw = Stopwatch.StartNew();
-        var (exit, stdout, stderr) = await RunDotnetAsync(args.ToString(), ct, DirectoryOf(projectOrSolutionPath));
+        var run = await RunDotnetAsync(args.ToString(), ct, DirectoryOf(projectOrSolutionPath), TimeSpan.FromSeconds(timeoutSeconds));
         sw.Stop();
+
+        if (run.TimedOut)
+        {
+            // Blame should have already killed and reported the hanging test before this fires; if not, the whole tree is gone now.
+            return TestRunSummary.Failed($"Test run timed out after {timeoutSeconds}s and likely hangs.\n{Tail(run.Stdout + run.Stderr)}", sw.Elapsed);
+        }
 
         var trxFiles = Directory.GetFiles(resultsDir, "*.trx", SearchOption.AllDirectories);
         if (trxFiles.Length == 0)
         {
             // Build failure or bad path: exit != 0 and nothing written. "No test is available" also lands here.
-            return TestRunSummary.Failed(exit == 0 ? "dotnet test ran but wrote no results (no tests matched?)" : Tail(stdout + stderr), sw.Elapsed);
+            return TestRunSummary.Failed(run.ExitCode == 0 ? "dotnet test ran but wrote no results (no tests matched?)" : Tail(run.Stdout + run.Stderr), sw.Elapsed);
         }
 
         var summary = TestRunSummary.Merge(trxFiles.Select(ParseTrx));
@@ -224,11 +281,16 @@ public sealed class TestRunner
     /// </summary>
     public static string DirectoryOf(string path) => Directory.Exists(path) ? path : Path.GetDirectoryName(Path.GetFullPath(path))!;
 
-    internal static Task<(int ExitCode, string Stdout, string Stderr)> RunDotnetAsync(string arguments, CancellationToken ct, string? workingDirectory = null)
-        => RunProcessAsync("dotnet", arguments, ct, workingDirectory);
+    internal static Task<(int ExitCode, string Stdout, string Stderr, bool TimedOut)> RunDotnetAsync(string arguments, CancellationToken ct, string? workingDirectory = null, TimeSpan? timeout = null)
+        => RunProcessAsync("dotnet", arguments, ct, workingDirectory, timeout);
 
-    /// <summary>Runs a child with all three std handles redirected: in stdio mode the parent's stdin/stdout ARE the MCP channel.</summary>
-    internal static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(string fileName, string arguments, CancellationToken ct, string? workingDirectory = null)
+    /// <summary>
+    /// Runs a child with all three std handles redirected: in stdio mode the parent's stdin/stdout ARE the MCP channel.
+    /// A run must always return, so <paramref name="timeout"/> bounds it: past it, the whole process tree is killed
+    /// (a child dotnet/testhost survives its parent otherwise) and TimedOut comes back true instead of throwing.
+    /// </summary>
+    internal static async Task<(int ExitCode, string Stdout, string Stderr, bool TimedOut)> RunProcessAsync(
+        string fileName, string arguments, CancellationToken ct, string? workingDirectory = null, TimeSpan? timeout = null)
     {
         var psi = new ProcessStartInfo(fileName, arguments)
         {
@@ -242,17 +304,27 @@ public sealed class TestRunner
         psi.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en"; // we grep "The following Tests are available"
         using var p = Process.Start(psi) ?? throw new InvalidOperationException($"Could not start {fileName}");
         p.StandardInput.Close();
+        // Read against `ct` only, never the timeout token: killing the process closes these pipes (EOF), so both tasks
+        // complete on their own after a timeout kill. Waiting on them with a timeout token too would just add a deadlock risk.
         var stdout = p.StandardOutput.ReadToEndAsync(ct);
         var stderr = p.StandardError.ReadToEndAsync(ct);
+        var timedOut = false;
+        using var timeoutCts = timeout is { } t ? new CancellationTokenSource(t) : null;
+        using var waitCts = timeoutCts is null ? null : CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
         try
         {
-            await p.WaitForExitAsync(ct);
+            await p.WaitForExitAsync(waitCts?.Token ?? ct);
+        }
+        catch (OperationCanceledException) when (timeoutCts?.IsCancellationRequested == true && !ct.IsCancellationRequested)
+        {
+            timedOut = true;
+            try { p.Kill(entireProcessTree: true); await p.WaitForExitAsync(CancellationToken.None); } catch { /* already gone */ }
         }
         catch (OperationCanceledException)
         {
             try { p.Kill(entireProcessTree: true); } catch { /* already gone */ }
             throw;
         }
-        return (p.ExitCode, await stdout, await stderr);
+        return (timedOut ? -1 : p.ExitCode, await stdout, await stderr, timedOut);
     }
 }
