@@ -11,11 +11,14 @@ Found by running the tools on [Polly](https://github.com/App-vNext/Polly); metho
 - Microsoft.Testing.Platform support: when global.json sets `"test": { "runner": "Microsoft.Testing.Platform" }`, `dotnet_test_run` and `dotnet_test_affected` use `--project`/`--solution`, xUnit v3's `--report-xunit-trx`/`--filter-method` (MSTest/NUnit: `--report-trx`/`--filter`), and read the TRX paths `dotnet test` reports instead of forcing `--results-directory`, which repos often set themselves. Before, every run on such a repo failed.
 - `framework` option on `dotnet_test_run` and `dotnet_test_affected`: run one target framework of multi-targeted test projects. On Polly a one-file change ran in 4.6 s instead of 16.8 s.
 - `dotnet_test_affected` reports `selectionComplete` and `symbolsSearched`, and has a time budget (`maxSelectionSeconds`, default 10). Out of budget, it runs the whole solution and says so instead of returning a partial selection.
+- `dotnet_test_affected` runs the whole solution when the selection is more than `maxSelectedFraction` (default 0.2) of all test methods, and reports `totalTestMethods` and `ranWholeSolution`: on Polly a 589-method selection ran slower filtered than the full suite.
+- `timeoutSeconds` (default 600) on `dotnet_test_run` and `dotnet_test_affected`: a hanging test no longer hangs the tool call. The process tree is killed and the response names the test modules that started but never finished; VSTest runs also name the hanging test (`--blame-hang`, no dump).
 
 ### Changed
 - `dotnet_test_affected` default `maxDepth` is 8 (was 3): at 3 the selections missed tests reached through overload chains. With the fixes below they included 111 of the 112 tests that injected faults broke in Polly, up from 101.
 - Affected test projects build one at a time, then run in parallel; parallel builds of projects sharing references collided on file locks.
 - Git (`git_repo_status`, `git_list_branches`, ..., 10 tools) and Monitoring (`dotnet_get_performance_metrics`, ..., 6 tools) are now opt-in via `--enable git,monitoring`, off by default: they add nothing over the shell an agent already has, and every registered tool costs context tokens in every session. The server now exposes 37 tools by default instead of 53.
+- `SharpTool_FindReferences` answers are about half the size: paths relative to the solution, one line of context, the enclosing member's name only.
 
 ### Fixed
 - Affected-test selection never finished on multi-targeted solutions (over 70 minutes on Polly for one commit): every TFM of every project was searched, the same symbols were walked once per TFM, and hops went through whole types. It now searches one TFM variant of each test project with its references, recognizes a symbol across TFMs, and hops through constructors instead of types.

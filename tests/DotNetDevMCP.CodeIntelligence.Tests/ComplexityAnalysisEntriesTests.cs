@@ -122,7 +122,6 @@ public class ComplexityAnalysisEntriesTests {
         public bool IsSolutionLoaded => false;
         public Microsoft.CodeAnalysis.MSBuild.MSBuildWorkspace? CurrentWorkspace => null;
         public Solution? CurrentSolution => null;
-        public bool IsWarm => false;
 
         public Task LoadSolutionAsync(string solutionPath, CancellationToken cancellationToken) => Task.CompletedTask;
         public void UnloadSolution() { }

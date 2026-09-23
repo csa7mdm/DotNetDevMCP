@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Xml.Linq;
 using ModelContextProtocol;
@@ -21,9 +20,6 @@ public sealed class SolutionManager : ISolutionManager {
     public MSBuildWorkspace? CurrentWorkspace => _workspace;
     public Solution? CurrentSolution => _currentSolution;
     private readonly string? _buildConfiguration;
-    private CancellationTokenSource? _warmUpCts;
-    private volatile bool _isWarm;
-    public bool IsWarm => _isWarm;
 
     public SolutionManager(ILogger<SolutionManager> logger, IFuzzyFqnLookupService fuzzyFqnLookupService, string? buildConfiguration = null) {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -52,48 +48,10 @@ public sealed class SolutionManager : ISolutionManager {
             _currentSolution = await _workspace.OpenSolutionAsync(solutionPath, new ProgressReporter(_logger), cancellationToken);
             _logger.LogInformation("Solution loaded successfully with {ProjectCount} projects.", _currentSolution.Projects.Count());
             InitializeMetadataContextAndReflectionCache(_currentSolution, cancellationToken);
-            StartCompilationWarmUp(_currentSolution);
         } catch (Exception ex) {
             _logger.LogError(ex, "Failed to load solution: {SolutionPath}", solutionPath);
             UnloadSolution();
             throw;
-        }
-    }
-    /// <summary>
-    /// Fire-and-forget: the first FindReferences/affected-test call after a load otherwise pays for building every
-    /// compilation itself and can blow past a search budget. Warms one TFM variant per project file (the others are
-    /// the same source recompiled) with bounded parallelism so the machine stays usable. Never throws, never awaited
-    /// by LoadSolutionAsync's caller, and is cancelled by the next load or by Dispose.
-    /// </summary>
-    private void StartCompilationWarmUp(Solution solution) {
-        _warmUpCts?.Cancel();
-        _warmUpCts?.Dispose();
-        var cts = new CancellationTokenSource();
-        _warmUpCts = cts;
-        _isWarm = false;
-        _ = WarmUpCompilationsAsync(solution, cts.Token);
-    }
-    private async Task WarmUpCompilationsAsync(Solution solution, CancellationToken cancellationToken) {
-        var projects = ProjectTfmSelector.HighestTfmPerFile(solution.Projects).ToList();
-        var sw = Stopwatch.StartNew();
-        _logger.LogInformation("Compilation warm-up starting for {ProjectCount} projects.", projects.Count);
-        try {
-            var degreeOfParallelism = Math.Max(1, Environment.ProcessorCount / 2);
-            using var gate = new SemaphoreSlim(degreeOfParallelism);
-            await Task.WhenAll(projects.Select(async project => {
-                await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-                try {
-                    await GetCompilationAsync(project.Id, cancellationToken).ConfigureAwait(false);
-                } finally {
-                    gate.Release();
-                }
-            })).ConfigureAwait(false);
-            _isWarm = true;
-            _logger.LogInformation("Compilation warm-up completed for {ProjectCount} projects in {ElapsedMs} ms.", projects.Count, sw.ElapsedMilliseconds);
-        } catch (OperationCanceledException) {
-            _logger.LogInformation("Compilation warm-up cancelled after {ElapsedMs} ms ({ProjectCount} projects).", sw.ElapsedMilliseconds, projects.Count);
-        } catch (Exception ex) {
-            _logger.LogWarning(ex, "Compilation warm-up failed after {ElapsedMs} ms.", sw.ElapsedMilliseconds);
         }
     }
     private void InitializeMetadataContextAndReflectionCache(Solution solution, CancellationToken cancellationToken = default) {
@@ -237,10 +195,6 @@ public sealed class SolutionManager : ISolutionManager {
     }
     public void UnloadSolution() {
         _logger.LogInformation("Unloading current solution and workspace.");
-        _warmUpCts?.Cancel();
-        _warmUpCts?.Dispose();
-        _warmUpCts = null;
-        _isWarm = false;
         _compilationCache.Clear();
         _semanticModelCache.Clear();
         _allLoadedReflectionTypesCache.Clear();
