@@ -198,7 +198,7 @@ public sealed class TestRunner
         // Named per-test, not per-run: the process timeout below already bounds the whole run. Naming the hanging test needs a
         // shorter per-test window, capped at the run timeout so it can never itself become the reason nothing finishes in time.
         var hangTimeout = Math.Min(120, timeoutSeconds);
-        args.Append($" --blame-hang --blame-hang-timeout {hangTimeout}s");
+        args.Append($" --blame-hang --blame-hang-timeout {hangTimeout}s --blame-hang-dump-type none"); // the name, not a multi-GB dump
         args.Append(FilterArg(fullFilter));
 
         var sw = Stopwatch.StartNew();
@@ -325,6 +325,12 @@ public sealed class TestRunner
             try { p.Kill(entireProcessTree: true); } catch { /* already gone */ }
             throw;
         }
-        return (timedOut ? -1 : p.ExitCode, await stdout, await stderr, timedOut);
+        if (timedOut)
+        {
+            // A process outside the killed tree (an MSBuild node, say) can still hold the pipes; take what arrived, don't wait on it.
+            await Task.WhenAny(Task.WhenAll(stdout, stderr), Task.Delay(TimeSpan.FromSeconds(10), CancellationToken.None));
+            return (-1, stdout.IsCompletedSuccessfully ? stdout.Result : "", stderr.IsCompletedSuccessfully ? stderr.Result : "", true);
+        }
+        return (p.ExitCode, await stdout, await stderr, false);
     }
 }
