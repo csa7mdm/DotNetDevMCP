@@ -31,15 +31,24 @@ public class ComplexityAnalysisService : IComplexityAnalysisService {
         CancellationToken cancellationToken) {
         var syntaxRef = methodSymbol.DeclaringSyntaxReferences.FirstOrDefault();
         if (syntaxRef == null) {
+            // No source syntax available (e.g. metadata-only symbol). Leave metrics empty so the
+            // caller can omit this entry entirely rather than emitting a name-less, metric-less "{}".
             _logger.LogWarning("Method {Method} has no syntax reference", methodSymbol.Name);
             return;
         }
 
-        var methodNode = await syntaxRef.GetSyntaxAsync(cancellationToken) as MethodDeclarationSyntax;
-        if (methodNode == null) {
-            _logger.LogWarning("Could not get method syntax for {Method}", methodSymbol.Name);
-            return;
-        }
+        // Any member that can carry an IMethodSymbol - ordinary methods, constructors, destructors,
+        // operators, conversion operators, and property/event accessors - declares its body via a
+        // different syntax type (MethodDeclarationSyntax, ConstructorDeclarationSyntax,
+        // AccessorDeclarationSyntax, ...). Only MethodDeclarationSyntax was handled before, so every
+        // other member kind failed the "as MethodDeclarationSyntax" cast and returned early with an
+        // empty (and name-less) metrics dictionary - the root cause of the "{}" entries. GetText() and
+        // DescendantNodes() are declared on SyntaxNode itself, so no cast/kind-specific handling is
+        // actually required here.
+        var methodNode = await syntaxRef.GetSyntaxAsync(cancellationToken);
+
+        // Always record the name once we have a syntax node, so every emitted entry is identifiable.
+        metrics["name"] = methodSymbol.Name;
 
         // Basic metrics
         var lineCount = methodNode.GetText().Lines.Count;
@@ -212,6 +221,12 @@ public class ComplexityAnalysisService : IComplexityAnalysisService {
 
             var methodDict = new Dictionary<string, object>();
             await AnalyzeMethodAsync(member, methodDict, recommendations, cancellationToken);
+
+            // AnalyzeMethodAsync leaves the dictionary empty when it couldn't get source syntax for
+            // the member (e.g. metadata-only symbols) - omit those rather than emitting a useless "{}".
+            if (methodDict.Count == 0) {
+                continue;
+            }
 
             if (methodDict.ContainsKey("cyclomaticComplexity")) {
                 methodComplexitySum += (int)methodDict["cyclomaticComplexity"];

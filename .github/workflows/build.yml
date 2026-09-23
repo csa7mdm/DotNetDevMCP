@@ -53,6 +53,10 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: dotnet pack src/DotNetDevMCP.Server/DotNetDevMCP.Server.csproj --configuration Release --no-build --output artifacts
 
+      - name: Check server.json is packed
+        if: matrix.os == 'ubuntu-latest'
+        run: unzip -Z1 artifacts/DotNetDevMCP.*.nupkg | grep -qx '.mcp/server.json'
+
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'ubuntu-latest'
         with:

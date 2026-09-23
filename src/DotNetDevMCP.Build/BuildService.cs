@@ -80,6 +80,7 @@ public class BuildService
                 FileName = "dotnet",
                 Arguments = arguments,
                 UseShellExecute = false,
+                RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
@@ -108,6 +109,7 @@ public class BuildService
             };
 
             process.Start();
+            process.StandardInput.Close(); // don't inherit the MCP stdio pipe
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
 
@@ -161,6 +163,7 @@ public class BuildService
                 FileName = "dotnet",
                 Arguments = arguments,
                 UseShellExecute = false,
+                RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true
@@ -178,6 +181,7 @@ public class BuildService
             };
 
             process.Start();
+            process.StandardInput.Close(); // don't inherit the MCP stdio pipe
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
 
@@ -223,6 +227,7 @@ public class BuildService
                 FileName = "dotnet",
                 Arguments = $"restore \"{projectPath}\"",
                 UseShellExecute = false,
+                RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true
@@ -240,6 +245,7 @@ public class BuildService
             };
 
             process.Start();
+            process.StandardInput.Close(); // don't inherit the MCP stdio pipe
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
 

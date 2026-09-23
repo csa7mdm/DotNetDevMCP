@@ -9,10 +9,10 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn> <!-- Missing XML comment for publicly visible type or member -->
 
     <!-- Version Information -->
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
     <IsPackable>false</IsPackable>
     <AssemblyVersion>0.2.0.0</AssemblyVersion>
-    <FileVersion>0.2.0.0</FileVersion>
+    <FileVersion>0.2.1.0</FileVersion>
 
     <!-- Package Metadata -->
     <Authors>Ahmed Mustafa</Authors>
@@ -24,7 +24,7 @@
     <RepositoryUrl>https://github.com/csa7mdm/DotNetDevMCP</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>mcp;mcp-server;model-context-protocol;dotnet;csharp;roslyn;testing;build;ai;agents</PackageTags>
-    <Description>MCP server for .NET development: Roslyn code intelligence, build, parallel test execution, git, and a DAG orchestrator that runs its own tools concurrently.</Description>
+    <Description>MCP server for .NET: Roslyn code navigation and refactoring, build, and affected-test selection.</Description>
 
     <!-- Documentation -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
