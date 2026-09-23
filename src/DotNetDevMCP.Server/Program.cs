@@ -39,7 +39,7 @@ public static class Program
         var buildConfigurationOption = new Option<string?>("--build-configuration") { Description = "Build configuration used when loading the solution (Debug, Release)." };
         var disableGitOption = new Option<bool>("--disable-git") { Description = "Disable git integration in code-intelligence tools." };
 
-        var root = new RootCommand("DotNetDevMCP - MCP server for .NET development: Roslyn code intelligence, build, parallel test execution, git, orchestration.")
+        var root = new RootCommand("DotNetDevMCP - MCP server for .NET development: Roslyn code intelligence, build, affected-test selection, git, orchestration.")
         {
             httpOption, portOption, logDirOption, logLevelOption, loadSolutionOption, buildConfigurationOption, disableGitOption
         };

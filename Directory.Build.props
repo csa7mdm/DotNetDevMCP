@@ -24,7 +24,7 @@
     <RepositoryUrl>https://github.com/csa7mdm/DotNetDevMCP</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>mcp;mcp-server;model-context-protocol;dotnet;csharp;roslyn;testing;build;ai;agents</PackageTags>
-    <Description>MCP server for .NET development: Roslyn code intelligence, build, parallel test execution, git, and a DAG orchestrator that runs its own tools concurrently.</Description>
+    <Description>MCP server for .NET: Roslyn code navigation and refactoring, build, and affected-test selection.</Description>
 
     <!-- Documentation -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
