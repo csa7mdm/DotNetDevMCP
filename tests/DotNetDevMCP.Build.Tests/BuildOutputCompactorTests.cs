@@ -83,21 +83,23 @@ public class BuildOutputCompactorTests
     {
         var diagnostics = new[]
         {
-            Error("CS0103", @"C:\repo\src\Project\Foo.cs", 10, "boom"),
+            Error("CS0103", Path.Combine(ProjectDir, "Foo.cs"), 10, "boom"),
         };
 
-        var result = BuildOutputCompactor.Compact(diagnostics, baseDirectory: @"C:\repo\src\Project");
+        var result = BuildOutputCompactor.Compact(diagnostics, baseDirectory: ProjectDir);
 
         Assert.Equal("Foo.cs", result.Errors[0].FilePath);
     }
 
-    [Theory]
-    [InlineData(@"C:\repo\src\Project\Sub\Foo.cs", @"C:\repo\src\Project", "Sub\\Foo.cs")]
-    public void RelativizePath_makes_nested_paths_relative(string filePath, string baseDirectory, string expected)
+    [Fact]
+    public void RelativizePath_makes_nested_paths_relative()
     {
-        var relative = BuildOutputCompactor.RelativizePath(filePath, baseDirectory);
-        Assert.Equal(expected, relative);
+        var relative = BuildOutputCompactor.RelativizePath(Path.Combine(ProjectDir, "Sub", "Foo.cs"), ProjectDir);
+        Assert.Equal(Path.Combine("Sub", "Foo.cs"), relative);
     }
+
+    // Rooted on every OS: C:\repo\src\Project on Windows, /repo/src/Project on Linux.
+    private static readonly string ProjectDir = Path.Combine(Path.GetPathRoot(Path.GetTempPath())!, "repo", "src", "Project");
 
     [Fact]
     public void RelativizePath_leaves_path_unchanged_when_base_directory_is_null()
