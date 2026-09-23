@@ -94,7 +94,8 @@ public static class SolutionTools {
                 return ToolHelpers.ToJson(new {
                     solutionName = Path.GetFileName(solutionPath),
                     projectCount,
-                    status = "Solution loaded successfully, but project structure retrieval failed."
+                    status = "Solution loaded successfully, but project structure retrieval failed.",
+                    note = "Roslyn compilation caches are warming in the background; other SharpTools remain usable while that finishes."
                 });
             }
         }, logger, nameof(LoadSolution), cancellationToken);
@@ -263,7 +264,8 @@ public static class SolutionTools {
                 var result = new {
                     solutionName,
                     projects = projectsData.OrderBy(p => ((dynamic)p).name).ToList(),
-                    nextStep = $"Use `{ToolHelpers.SharpToolPrefix}{nameof(LoadProject)}` to get a detailed view of a specific project's structure."
+                    nextStep = $"Use `{ToolHelpers.SharpToolPrefix}{nameof(LoadProject)}` to get a detailed view of a specific project's structure.",
+                    note = solutionManager.IsWarm ? null : "Roslyn compilation caches are warming in the background; other SharpTools remain usable while that finishes."
                 };
 
                 logger.LogInformation("Project structure retrieved successfully for {ProjectCount} projects.", projectsData.Count);
