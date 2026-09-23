@@ -40,7 +40,7 @@ public static class ModificationTools {
         [Description("The C# code to add.")] string codeSnippet,
         [Description("If the target is a partial type, specifies which file to add to. Set to 'auto' to determine automatically.")] string fileNameHint,
         [Description("Suggest a line number to insert the member near. '-1' to determine automatically.")] int lineNumberHint,
-        string commitMessage,
+        [Description("Commit message summary of this change. Ignored when git integration is disabled (the default) - enable with --git-commit-edits to have edits create git commits.")] string commitMessage,
         CancellationToken cancellationToken = default) {
         return await ErrorHandlingHelpers.ExecuteWithErrorHandlingAsync(async () => {
             // Validate parameters
@@ -230,7 +230,7 @@ public static class ModificationTools {
         ILogger<ModificationToolsLogCategory> logger,
         [Description("FQN of the member or type to rewrite.")] string fullyQualifiedMemberName,
         [Description("The new C# code for the member or type. *If this member has attributes or XML documentation, they MUST be included here.* To Delete the target instead, set this to `// Delete {memberName}`.")] string newMemberCode,
-        string commitMessage,
+        [Description("Commit message summary of this change. Ignored when git integration is disabled (the default) - enable with --git-commit-edits to have edits create git commits.")] string commitMessage,
         CancellationToken cancellationToken = default) {
         return await ErrorHandlingHelpers.ExecuteWithErrorHandlingAsync(async () => {
             ErrorHandlingHelpers.ValidateStringParameter(fullyQualifiedMemberName, nameof(fullyQualifiedMemberName), logger);
@@ -356,7 +356,7 @@ public static class ModificationTools {
         ILogger<ModificationToolsLogCategory> logger,
         [Description("FQN of the symbol to rename.")] string fullyQualifiedSymbolName,
         [Description("The new name for the symbol.")] string newName,
-        string commitMessage,
+        [Description("Commit message summary of this change. Ignored when git integration is disabled (the default) - enable with --git-commit-edits to have edits create git commits.")] string commitMessage,
         CancellationToken cancellationToken = default) {
 
         return await ErrorHandlingHelpers.ExecuteWithErrorHandlingAsync(async () => {
@@ -454,7 +454,7 @@ public static class ModificationTools {
         [Description("FQN of the symbol whose references should be replaced.")] string fullyQualifiedSymbolName,
         [Description("The C# code replace references with.")] string replacementCode,
         [Description("Only replace symbols in files with this pattern. Supports globbing (`*`).")] string filenameFilter,
-        string commitMessage,
+        [Description("Commit message summary of this change. Ignored when git integration is disabled (the default) - enable with --git-commit-edits to have edits create git commits.")] string commitMessage,
         CancellationToken cancellationToken = default) {
 
         return await ErrorHandlingHelpers.ExecuteWithErrorHandlingAsync(async () => {
@@ -625,7 +625,7 @@ public static class ModificationTools {
         [Description("Regex operating in multiline mode, so `^` and `$` match per line. Always use `\\s*` at the beginnings of lines for unknown indentation. Make sure to escape your escapes for json.")] string regexPattern,
         [Description("Replacement text, which can include regex groups ($1, ${name}, etc.)")] string replacementText,
         [Description("Target, which can be either a FQN (replaces text within a declaration) or a filepath supporting globbing (`*`) (replaces all instances across files)")] string target,
-        string commitMessage,
+        [Description("Commit message summary of this change. Ignored when git integration is disabled (the default) - enable with --git-commit-edits to have edits create git commits.")] string commitMessage,
         CancellationToken cancellationToken = default) {
 
         return await ErrorHandlingHelpers.ExecuteWithErrorHandlingAsync(async () => {
@@ -842,7 +842,7 @@ public static class ModificationTools {
                         ILogger<ModificationToolsLogCategory> logger,
                         [Description("FQN of the member to move.")] string fullyQualifiedMemberName,
                         [Description("FQN of the destination type or namespace where the member should be moved.")] string fullyQualifiedDestinationTypeOrNamespaceName,
-                        string commitMessage,
+                        [Description("Commit message summary of this change. Ignored when git integration is disabled (the default) - enable with --git-commit-edits to have edits create git commits.")] string commitMessage,
                         CancellationToken cancellationToken = default) {
         return await ErrorHandlingHelpers.ExecuteWithErrorHandlingAsync(async () => {
             ErrorHandlingHelpers.ValidateStringParameter(fullyQualifiedMemberName, nameof(fullyQualifiedMemberName), logger);

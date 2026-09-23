@@ -50,6 +50,8 @@ claude mcp add dotnetdevmcp -- dnx DotNetDevMCP --yes
 
 Pass `--load-solution <path>` to have Roslyn load your solution at startup, or let the agent call `SharpTool_LoadSolution` when it needs to. `--http --port 3001` serves Streamable HTTP instead of stdio. `dotnetdevmcp --help` lists everything.
 
+By default, the Roslyn edit tools (`SharpTool_RenameSymbol`, `OverwriteMember`, `AddMember`, `MoveMember`, `FindAndReplace`, `CreateRoslynDocument`, `OverwriteRoslynDocument`, `ManageUsings`, `ManageAttributes`) never touch git - they apply changes to disk and return the usual compile-check output, nothing else. Pass `--git-commit-edits` to opt into the old behavior: each edit creates a `sharptools/<timestamp>` branch (if you aren't already on one) and commits the change, which is also what `SharpTool_Undo` needs in order to revert. Without the flag, `SharpTool_Undo` returns an explanatory error instead of failing obscurely. (`--disable-git` still exists but is a no-op now that git integration is opt-in by default.)
+
 ## What the agent gets
 
 | Group | Tools | What they do |

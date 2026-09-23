@@ -81,7 +81,7 @@ public static class DocumentTools {
                 ILogger<DocumentToolsLogCategory> logger,
                 [Description("The absolute path where the file should be created.")] string filePath,
                 [Description("The content to write to the file. For C#, omit indentation to save tokens. Code will be auto-formatted.")] string content,
-                string commitMessage,
+                [Description("Commit message summary of this change. Ignored when git integration is disabled (the default) - enable with --git-commit-edits to have edits create git commits.")] string commitMessage,
                 CancellationToken cancellationToken = default) {
         return await ErrorHandlingHelpers.ExecuteWithErrorHandlingAsync(async () => {
             ErrorHandlingHelpers.ValidateStringParameter(filePath, "filePath", logger);
@@ -163,7 +163,7 @@ public static class DocumentTools {
         ILogger<DocumentToolsLogCategory> logger,
         [Description("The absolute path to the file to overwrite.")] string filePath,
         [Description("The content to write to the file. For C#, omit indentation to save tokens. Code will be auto-formatted.")] string content,
-        string commitMessage,
+        [Description("Commit message summary of this change. Ignored when git integration is disabled (the default) - enable with --git-commit-edits to have edits create git commits.")] string commitMessage,
         CancellationToken cancellationToken = default) {
         return await ErrorHandlingHelpers.ExecuteWithErrorHandlingAsync(async () => {
             ErrorHandlingHelpers.ValidateStringParameter(filePath, "filePath", logger);

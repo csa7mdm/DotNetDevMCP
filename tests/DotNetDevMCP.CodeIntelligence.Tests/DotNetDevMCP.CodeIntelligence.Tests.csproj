@@ -18,4 +18,8 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DotNetDevMCP.CodeIntelligence\DotNetDevMCP.CodeIntelligence.csproj" />
+  </ItemGroup>
+
 </Project>

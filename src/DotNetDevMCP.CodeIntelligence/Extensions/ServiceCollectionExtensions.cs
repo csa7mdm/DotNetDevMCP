@@ -16,7 +16,15 @@ public static class ServiceCollectionExtensions {
     /// </summary>
     /// <param name="services">The service collection to add services to.</param>
     /// <returns>The service collection for chaining.</returns>
-    public static IServiceCollection WithCodeIntelligenceServices(this IServiceCollection services, bool enableGit = true, string? buildConfiguration = null) {
+    /// <param name="enableGit">
+    /// When true, edit tools (RenameSymbol, OverwriteMember, AddMember, MoveMember, FindAndReplace,
+    /// CreateRoslynDocument, OverwriteRoslynDocument, ManageUsings, ManageAttributes) create a
+    /// "sharptools/&lt;timestamp&gt;" branch and commit after every change, and SharpTool_Undo reverts by
+    /// resetting that commit. Defaults to false (opt-in via --git-commit-edits) because switching a
+    /// user's branch and creating commits behind their back is surprising. When false, edits still
+    /// apply to disk and return the same compile-check output - they just never touch git.
+    /// </param>
+    public static IServiceCollection WithCodeIntelligenceServices(this IServiceCollection services, bool enableGit = false, string? buildConfiguration = null) {
         services.AddSingleton<IFuzzyFqnLookupService, FuzzyFqnLookupService>();
         services.AddSingleton<ISolutionManager>(sp => 
             new SolutionManager(

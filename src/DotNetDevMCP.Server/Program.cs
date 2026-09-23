@@ -37,11 +37,12 @@ public static class Program
         var logLevelOption = new Option<LogEventLevel>("--log-level") { Description = "Minimum log level.", DefaultValueFactory = _ => LogEventLevel.Information };
         var loadSolutionOption = new Option<string?>("--load-solution") { Description = "Solution (.sln) to load on startup." };
         var buildConfigurationOption = new Option<string?>("--build-configuration") { Description = "Build configuration used when loading the solution (Debug, Release)." };
-        var disableGitOption = new Option<bool>("--disable-git") { Description = "Disable git integration in code-intelligence tools." };
+        var gitCommitEditsOption = new Option<bool>("--git-commit-edits") { Description = "Let edit tools (RenameSymbol, OverwriteMember, AddMember, MoveMember, FindAndReplace, CreateRoslynDocument, OverwriteRoslynDocument, ManageUsings, ManageAttributes) create a git branch and commit after each change, and enable SharpTool_Undo. Off by default: edits are still applied to disk and compile-checked, they just don't touch git or your current branch." };
+        var disableGitOption = new Option<bool>("--disable-git") { Description = "Deprecated, no-op. Git integration in code-intelligence tools is off by default; use --git-commit-edits to opt in." };
 
         var root = new RootCommand("DotNetDevMCP - MCP server for .NET development: Roslyn code intelligence, build, affected-test selection, git, orchestration.")
         {
-            httpOption, portOption, logDirOption, logLevelOption, loadSolutionOption, buildConfigurationOption, disableGitOption
+            httpOption, portOption, logDirOption, logLevelOption, loadSolutionOption, buildConfigurationOption, gitCommitEditsOption, disableGitOption
         };
 
         var parsed = root.Parse(args);
@@ -58,15 +59,21 @@ public static class Program
         LogEventLevel logLevel = parsed.GetValue(logLevelOption);
         string? solutionPath = parsed.GetValue(loadSolutionOption);
         string? buildConfiguration = parsed.GetValue(buildConfigurationOption);
-        bool disableGit = parsed.GetValue(disableGitOption);
+        bool gitCommitEdits = parsed.GetValue(gitCommitEditsOption);
+        bool disableGitLegacyFlag = parsed.GetValue(disableGitOption);
 
         Log.Logger = BuildLogger(logLevel, logDir);
+
+        if (disableGitLegacyFlag)
+        {
+            Log.Warning("--disable-git is deprecated and has no effect: git integration is already off by default. Use --git-commit-edits to opt into it.");
+        }
 
         try
         {
             Log.Information("Starting {App} v{Version} ({Transport})", ApplicationName, ApplicationVersion, http ? $"http://localhost:{port}" : "stdio");
 
-            IHost host = http ? BuildHttpHost(args, port, disableGit, buildConfiguration) : BuildStdioHost(args, disableGit, buildConfiguration);
+            IHost host = http ? BuildHttpHost(args, port, gitCommitEdits, buildConfiguration) : BuildStdioHost(args, gitCommitEdits, buildConfiguration);
 
             if (!string.IsNullOrEmpty(solutionPath))
             {
@@ -87,30 +94,30 @@ public static class Program
         }
     }
 
-    private static IHost BuildStdioHost(string[] args, bool disableGit, string? buildConfiguration)
+    private static IHost BuildStdioHost(string[] args, bool gitCommitEdits, string? buildConfiguration)
     {
         var builder = Host.CreateApplicationBuilder(args);
         builder.Logging.ClearProviders();
         builder.Logging.AddSerilog();
-        AddServices(builder.Services, disableGit, buildConfiguration).WithStdioServerTransport();
+        AddServices(builder.Services, gitCommitEdits, buildConfiguration).WithStdioServerTransport();
         return builder.Build();
     }
 
-    private static IHost BuildHttpHost(string[] args, int port, bool disableGit, string? buildConfiguration)
+    private static IHost BuildHttpHost(string[] args, int port, bool gitCommitEdits, string? buildConfiguration)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args });
         builder.Host.UseSerilog();
         builder.WebHost.UseUrls($"http://localhost:{port}");
-        AddServices(builder.Services, disableGit, buildConfiguration).WithHttpTransport();
+        AddServices(builder.Services, gitCommitEdits, buildConfiguration).WithHttpTransport();
         var app = builder.Build();
         app.MapMcp();
         return app;
     }
 
     /// <summary>Registers every service and every MCP tool of the server. One place, so nothing gets left out again.</summary>
-    private static IMcpServerBuilder AddServices(IServiceCollection services, bool disableGit, string? buildConfiguration)
+    private static IMcpServerBuilder AddServices(IServiceCollection services, bool gitCommitEdits, string? buildConfiguration)
     {
-        services.WithCodeIntelligenceServices(!disableGit, buildConfiguration);
+        services.WithCodeIntelligenceServices(gitCommitEdits, buildConfiguration);
         services.AddAnalysisServices();
         services.AddMonitoringServices();
         services.WithOrchestrationServices();
