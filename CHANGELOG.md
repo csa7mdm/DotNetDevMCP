@@ -3,6 +3,11 @@
 All notable changes to DotNetDevMCP are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [0.2.2] - 2026-09-23
+
+### Fixed
+- README carries the `mcp-name: io.github.csa7mdm/dotnetdevmcp` marker the MCP Registry needs to verify ownership of the NuGet package. Build and Release fail if the packed README lacks it.
+
 ## [0.2.1] - 2026-09-23
 
 ### Changed

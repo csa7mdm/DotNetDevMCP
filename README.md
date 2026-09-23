@@ -1,5 +1,7 @@
 # DotNetDevMCP
 
+<!-- mcp-name: io.github.csa7mdm/dotnetdevmcp -->
+
 An [MCP](https://modelcontextprotocol.io) server that gives AI coding agents real .NET tooling: Roslyn code intelligence, `dotnet build`/`test`, git, and an orchestrator that runs those tools concurrently as a dependency graph.
 
 [![Build and Test](https://github.com/csa7mdm/DotNetDevMCP/actions/workflows/build.yml/badge.svg)](https://github.com/csa7mdm/DotNetDevMCP/actions/workflows/build.yml)
