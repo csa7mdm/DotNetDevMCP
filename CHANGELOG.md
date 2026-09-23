@@ -3,7 +3,20 @@
 All notable changes to DotNetDevMCP are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## [0.2.0] - Unreleased
+## [0.2.1] - 2026-09-23
+
+### Changed
+- `dotnet_build` and `dotnet_build_with_properties` return a compact summary by default: counts, every error, and up to 20 de-duplicated warnings with paths relative to the project. A clean build of this repo went from 55,960 to 8,618 characters. `verbose: true` adds the raw MSBuild lines. `dotnet_clean`/`dotnet_restore` return no output on success and a 20-line tail on failure.
+- Edit tools (`SharpTool_RenameSymbol`, `OverwriteMember`, `AddMember`, `MoveMember`, `FindAndReplace`, `CreateRoslynDocument`, `OverwriteRoslynDocument`, `ManageUsings`, `ManageAttributes`) no longer create a `sharptools/<timestamp>` branch and commit by default. Opt in with `--git-commit-edits`, which `SharpTool_Undo` requires. `--disable-git` is now a no-op.
+- Descriptions no longer mention parallel test execution.
+
+### Fixed
+- The package stored `server.json` as `.mcp//server.json` when packed on Linux, so nuget.org showed no MCP server configuration.
+- Edit tools formatted every changed file in full, so untouched code that didn't match `.editorconfig` was rewritten too: renaming one method in this repo produced a 95-line diff. They now format only the text they changed (the same rename is a 2-line diff).
+- `SharpTool_AnalyzeComplexity` emitted empty `{}` entries for constructors, operators and accessors; every entry now carries `name`.
+- `dotnet build`/`clean`/`restore` child processes inherited the MCP stdin pipe.
+
+## [0.2.0] - 2026-09-23
 
 ### Changed
 - `dotnet_test_run` now runs one `dotnet test` per project or solution and parses the TRX it writes (per-test outcome, duration, message, stack trace, stdout). The four execution strategies and the process-per-test runner are gone: plain `dotnet test` on this repo's 44 tests takes 9 s, the old "SmartParallel" runner took 22 s. `strategy`, `maxParallelTests`, `timeoutSeconds` and `continueOnFailure` parameters removed; `assemblyPath` renamed to `path`; `filter` and `noBuild` added.

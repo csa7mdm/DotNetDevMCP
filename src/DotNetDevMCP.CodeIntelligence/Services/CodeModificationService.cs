@@ -418,9 +418,31 @@ public class CodeModificationService : ICodeModificationService {
     public async Task<Document> FormatDocumentAsync(Document document, CancellationToken cancellationToken) {
         _logger.LogDebug("Formatting document: {DocumentPath}", document.FilePath);
         var formattingOptions = await document.GetOptionsAsync(cancellationToken);
+
+        // Format only what this edit changed. Formatting the whole file rewrote untouched code
+        // (e.g. every brace in a file that doesn't match .editorconfig) and turned a rename into a 95-line diff.
+        var original = _solutionManager.CurrentSolution?.GetDocument(document.Id);
+        if (original != null) {
+            var spans = ChangedSpansInNewText(await document.GetTextChangesAsync(original, cancellationToken));
+            return spans.Count == 0
+                ? document
+                : await Formatter.FormatAsync(document, spans, formattingOptions, cancellationToken);
+        }
+
         var formattedDocument = await Formatter.FormatAsync(document, formattingOptions, cancellationToken);
         _logger.LogDebug("Document formatted: {DocumentPath}", document.FilePath);
         return formattedDocument;
+    }
+    /// <summary>Maps text changes (spans in the old text) to the spans their new text occupies in the new text.</summary>
+    public static List<TextSpan> ChangedSpansInNewText(IEnumerable<TextChange> changes) {
+        var spans = new List<TextSpan>();
+        var delta = 0;
+        foreach (var change in changes.OrderBy(c => c.Span.Start)) {
+            var newLength = change.NewText?.Length ?? 0;
+            spans.Add(new TextSpan(change.Span.Start + delta, newLength));
+            delta += newLength - change.Span.Length;
+        }
+        return spans;
     }
     public async Task ApplyChangesAsync(Solution newSolution, CancellationToken cancellationToken, string commitMessage, IEnumerable<string>? additionalFilePaths = null) {
         if (_solutionManager.CurrentWorkspace is not MSBuildWorkspace workspace) {

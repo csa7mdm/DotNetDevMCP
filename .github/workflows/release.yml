@@ -36,6 +36,10 @@ jobs:
       - name: Pack
         run: dotnet pack src/DotNetDevMCP.Server/DotNetDevMCP.Server.csproj --configuration Release --no-build --output artifacts -p:Version=${{ steps.v.outputs.version }}
 
+      # nuget.org only detects the MCP server config at exactly this entry name.
+      - name: Check server.json is packed
+        run: unzip -Z1 artifacts/DotNetDevMCP.${{ steps.v.outputs.version }}.nupkg | grep -qx '.mcp/server.json'
+
       # Right before push: the temporary key lives 1 hour.
       - name: NuGet login (OIDC -> temp API key)
         uses: NuGet/login@v1
