@@ -9,7 +9,7 @@ An [MCP](https://modelcontextprotocol.io) server that gives AI coding agents rea
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
 
-Agents working on .NET code usually get by with `grep` and shelling out to `dotnet`. That means they read files instead of symbols, edit text instead of syntax trees, and run one command at a time. DotNetDevMCP replaces that with 53 tools that use the compiler's view of your solution and can run builds, tests and analysis in parallel.
+Agents working on .NET code usually get by with `grep` and shelling out to `dotnet`. That means they read files instead of symbols, edit text instead of syntax trees, and run one command at a time. DotNetDevMCP replaces that with 37 tools by default (53 with the optional groups below enabled) that use the compiler's view of your solution and can run builds, tests and analysis in parallel.
 
 ## Install
 
@@ -52,6 +52,8 @@ claude mcp add dotnetdevmcp -- dnx DotNetDevMCP --yes
 
 Pass `--load-solution <path>` to have Roslyn load your solution at startup, or let the agent call `SharpTool_LoadSolution` when it needs to. `--http --port 3001` serves Streamable HTTP instead of stdio. `dotnetdevmcp --help` lists everything.
 
+Git and Monitoring tools (see the table below) are off by default - a shell an agent already has covers them, and every registered tool costs context tokens in every session. Pass `--enable git,monitoring` (comma-separated and/or repeated, e.g. `--enable git --enable monitoring`) to turn either or both on.
+
 By default, the Roslyn edit tools (`SharpTool_RenameSymbol`, `OverwriteMember`, `AddMember`, `MoveMember`, `FindAndReplace`, `CreateRoslynDocument`, `OverwriteRoslynDocument`, `ManageUsings`, `ManageAttributes`) never touch git - they apply changes to disk and return the usual compile-check output, nothing else. Pass `--git-commit-edits` to opt into the old behavior: each edit creates a `sharptools/<timestamp>` branch (if you aren't already on one) and commits the change, which is also what `SharpTool_Undo` needs in order to revert. Without the flag, `SharpTool_Undo` returns an explanatory error instead of failing obscurely. (`--disable-git` still exists but is a no-op now that git integration is opt-in by default.)
 
 ## What the agent gets
@@ -60,11 +62,11 @@ By default, the Roslyn edit tools (`SharpTool_RenameSymbol`, `OverwriteMember`, 
 |---|---|---|
 | Code intelligence (Roslyn) | 21 | Load a solution; search and view definitions; find references and implementations; add, overwrite, move and rename members; manage usings and attributes; find-and-replace with syntax awareness; complexity analysis; undo. Forked from [SharpTools](https://github.com/kooshi/SharpToolsMCP). |
 | Testing | 3 | `dotnet_test_run` (one `dotnet test` per project or solution, TRX parsed into per-test results with messages and stack traces), `dotnet_test_discover`, and `dotnet_test_affected`: Roslyn walks references from your changed files to the test methods that reach them, and runs only those. |
-| Build | 5 | `dotnet build`, `restore`, `clean`, build with MSBuild properties, scan for outdated packages. Structured error/warning output. |
-| Analysis | 6 | Project dependency graph, circular-dependency detection, quality metrics, health check. |
-| Git | 10 | Status, branches, checkout, stage, commit, diff, log, push, pull. |
+| Build | 4 | `dotnet build`, `restore`, `clean`, build with MSBuild properties. Structured error/warning output. |
+| Analysis | 5 | Project dependency graph, circular-dependency detection, quality metrics, outdated-package scan. |
 | Orchestration | 4 | `orchestrate_parallel` runs any of the server's own tools concurrently; `execute_workflow` runs them as a DAG. Resource limits and metrics. |
-| Monitoring | 4 | Process performance metrics, GC stats, resource utilization, profiling sessions. |
+| Git *(opt-in)* | 10 | Status, branches, checkout, stage, commit, diff, log, push, pull. Enable with `--enable git`. |
+| Monitoring *(opt-in)* | 6 | Process performance metrics, GC stats, resource utilization, health check, profiling sessions. Enable with `--enable monitoring`. |
 
 Things you can say to an agent with this server attached:
 
