@@ -38,7 +38,10 @@ jobs:
 
       # nuget.org only detects the MCP server config at exactly this entry name.
       - name: Check server.json is packed
-        run: unzip -Z1 artifacts/DotNetDevMCP.${{ steps.v.outputs.version }}.nupkg | grep -qx '.mcp/server.json'
+        run: |
+          unzip -Z1 artifacts/DotNetDevMCP.${{ steps.v.outputs.version }}.nupkg | grep -qx '.mcp/server.json'
+          # MCP Registry ownership check reads this from the packed README.
+          unzip -p artifacts/DotNetDevMCP.${{ steps.v.outputs.version }}.nupkg README.md | grep -q 'mcp-name: io.github.csa7mdm/dotnetdevmcp'
 
       # Right before push: the temporary key lives 1 hour.
       - name: NuGet login (OIDC -> temp API key)
