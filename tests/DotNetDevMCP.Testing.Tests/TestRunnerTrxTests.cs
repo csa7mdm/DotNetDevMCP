@@ -66,4 +66,35 @@ public class TestRunnerTrxTests
         Assert.False(m.Success);
         Assert.Equal(TimeSpan.FromSeconds(2), m.Duration); // max, not sum: runs are concurrent
     }
+
+    [Fact]
+    public void UnfinishedModules_reports_only_modules_that_started_without_a_matching_end_line()
+    {
+        var output = """
+            Running tests from /repo/bin/Debug/net10.0/Polly.Core.Tests.dll
+            Running tests from /repo/bin/Debug/net10.0/Polly.Specs.dll
+            /repo/bin/Debug/net10.0/Polly.Core.Tests.dll (net10.0|x64) passed! - Failed: 0, Passed: 120, Skipped: 0, Total: 120, Duration: 4s
+            """;
+
+        var unfinished = TestRunner.UnfinishedModules(output);
+
+        Assert.Equal(["/repo/bin/Debug/net10.0/Polly.Specs.dll"], unfinished);
+    }
+
+    [Fact]
+    public void UnfinishedModules_is_empty_when_every_started_module_also_finished()
+    {
+        var output = """
+            Running tests from /repo/bin/Debug/net10.0/Polly.Core.Tests.dll
+            /repo/bin/Debug/net10.0/Polly.Core.Tests.dll (net10.0|x64) failed! - Failed: 1, Passed: 119, Skipped: 0, Total: 120, Duration: 4s
+            """;
+
+        Assert.Empty(TestRunner.UnfinishedModules(output));
+    }
+
+    [Fact]
+    public void UnfinishedModules_tolerates_output_with_no_recognizable_lines()
+    {
+        Assert.Empty(TestRunner.UnfinishedModules("some unrelated build output\nwith random lines\nand no module markers at all"));
+    }
 }

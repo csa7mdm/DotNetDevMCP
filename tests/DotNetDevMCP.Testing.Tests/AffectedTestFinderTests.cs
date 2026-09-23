@@ -60,6 +60,30 @@ public class AffectedTestFinderTests
     }
 
     [Fact]
+    public async Task Counts_test_methods_in_scope_and_not_other_methods()
+    {
+        var solution = BuildSolution(
+            lib: new() { ["A.cs"] = "namespace Lib; public class A { public int M() => 1; public int Helper() => 2; }" },
+            tests: """
+                using Xunit;
+                namespace Lib.Tests;
+                public class LibTests
+                {
+                    [Fact] public void One() { }
+                    [Fact] public void Two() { }
+                    [Theory] public void Three(int x) { }
+                    private void NotATest() { }
+                    public void AlsoNotATest() { }
+                }
+                """);
+
+        // Both TFM variants of Lib.Tests share the same file, so the scope counts LibTests.cs once: 3 test methods, not 6.
+        var affected = await AffectedTestFinder.FindAsync(solution, [Path.Combine(Root, "src", "A.cs")], maxDepth: 1, AffectedTestFinder.DefaultBudget, NullLogger.Instance, default);
+
+        Assert.Equal(3, affected.TotalTestMethods);
+    }
+
+    [Fact]
     public async Task Reports_an_incomplete_selection_instead_of_dropping_tests_when_the_budget_runs_out()
     {
         var solution = BuildSolution(
