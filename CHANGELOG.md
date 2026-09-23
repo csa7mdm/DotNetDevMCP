@@ -3,6 +3,25 @@
 All notable changes to DotNetDevMCP are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [0.3.0] - 2026-09-23
+
+Found by running the tools on [Polly](https://github.com/App-vNext/Polly); method and numbers in [benchmarks/polly](benchmarks/polly/README.md).
+
+### Added
+- Microsoft.Testing.Platform support: when global.json sets `"test": { "runner": "Microsoft.Testing.Platform" }`, `dotnet_test_run` and `dotnet_test_affected` use `--project`/`--solution`, xUnit v3's `--report-xunit-trx`/`--filter-method` (MSTest/NUnit: `--report-trx`/`--filter`), and read the TRX paths `dotnet test` reports instead of forcing `--results-directory`, which repos often set themselves. Before, every run on such a repo failed.
+- `framework` option on `dotnet_test_run` and `dotnet_test_affected`: run one target framework of multi-targeted test projects. On Polly a one-file change ran in 4.6 s instead of 16.8 s.
+- `dotnet_test_affected` reports `selectionComplete` and `symbolsSearched`, and has a time budget (`maxSelectionSeconds`, default 10). Out of budget, it runs the whole solution and says so instead of returning a partial selection.
+
+### Changed
+- `dotnet_test_affected` default `maxDepth` is 8 (was 3): at 3 the selections missed tests reached through overload chains. With the fixes below they included 111 of the 112 tests that injected faults broke in Polly, up from 101.
+- Affected test projects build one at a time, then run in parallel; parallel builds of projects sharing references collided on file locks.
+
+### Fixed
+- Affected-test selection never finished on multi-targeted solutions (over 70 minutes on Polly for one commit): every TFM of every project was searched, the same symbols were walked once per TFM, and hops went through whole types. It now searches one TFM variant of each test project with its references, recognizes a symbol across TFMs, and hops through constructors instead of types.
+- Tests fed by xUnit `[MemberData]` from a static field were not selected: the walk went from the field initializer to the static constructor, which nothing references. It now follows the field too.
+- `dotnet` ran in the server's working directory, so the repository's global.json (pinned SDK, test runner mode) was ignored. Test, build, clean and restore now start in the project's directory.
+- `SharpTool_FindReferences` counted each reference once per target framework (925 for a property with 79 matching lines on Polly) and could show the same location repeatedly. References are now unique by file and position.
+
 ## [0.2.2] - 2026-09-23
 
 ### Fixed

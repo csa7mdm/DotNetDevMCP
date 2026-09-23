@@ -1,0 +1,588 @@
+[
+ {
+  "sha": "9ad5ae9b",
+  "date": "2026-09-12",
+  "subject": "Fix flaky test (#3231)",
+  "files": 1,
+  "tests": 5,
+  "complete": true,
+  "symbols": 3,
+  "projects": [
+   "Polly.Core.Tests"
+  ],
+  "seconds": 5.47
+ },
+ {
+  "sha": "1a80392b",
+  "date": "2026-09-11",
+  "subject": "Update to xunit v3 (#3131)",
+  "files": 4,
+  "tests": 118,
+  "complete": false,
+  "symbols": 89,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 20.46
+ },
+ {
+  "sha": "482bdf82",
+  "date": "2026-09-06",
+  "subject": "Return null from FaultGenerator when no fault is generated (#3220)",
+  "files": 1,
+  "tests": 5,
+  "complete": true,
+  "symbols": 13,
+  "projects": [
+   "Polly.Core.Tests"
+  ],
+  "seconds": 0.45
+ },
+ {
+  "sha": "47e3b412",
+  "date": "2026-08-16",
+  "subject": "Fix XML doc comment (#3201)",
+  "files": 1,
+  "tests": 6,
+  "complete": true,
+  "symbols": 8,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests"
+  ],
+  "seconds": 0.19
+ },
+ {
+  "sha": "3987bb8c",
+  "date": "2026-08-08",
+  "subject": "Bump SonarAnalyzer.CSharp from 10.29.0.143774 to 10.31.0.145097 (#3190",
+  "files": 8,
+  "tests": 79,
+  "complete": false,
+  "symbols": 124,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 20.04
+ },
+ {
+  "sha": "f2a07e68",
+  "date": "2026-07-20",
+  "subject": "Add EnableReloadsWithMonitor extension method (#3140)",
+  "files": 1,
+  "tests": 12,
+  "complete": true,
+  "symbols": 23,
+  "projects": [
+   "Polly.Extensions.Tests"
+  ],
+  "seconds": 0.1
+ },
+ {
+  "sha": "8ba491d7",
+  "date": "2026-07-10",
+  "subject": "Bump SonarAnalyzer.CSharp from 10.27.0.140913 to 10.28.0.143324 (#3154",
+  "files": 1,
+  "tests": 59,
+  "complete": true,
+  "symbols": 26,
+  "projects": [
+   "Polly.Core.Tests"
+  ],
+  "seconds": 0.12
+ },
+ {
+  "sha": "7a1d10f4",
+  "date": "2026-06-28",
+  "subject": "Avoid test flakiness (#3134)",
+  "files": 1,
+  "tests": 589,
+  "complete": true,
+  "symbols": 80,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Specs",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 12.16
+ },
+ {
+  "sha": "796be73c",
+  "date": "2026-06-27",
+  "subject": "Bump dotnet-stryker from 4.14.2 to 4.15.0 (#3127)",
+  "files": 3,
+  "tests": 467,
+  "complete": true,
+  "symbols": 60,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Specs",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 11.93
+ },
+ {
+  "sha": "e984839b",
+  "date": "2026-06-04",
+  "subject": "Add caller CancellationToken propagation for hedging and timeout (#309",
+  "files": 3,
+  "tests": 109,
+  "complete": true,
+  "symbols": 47,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 0.88
+ },
+ {
+  "sha": "ed3d603c",
+  "date": "2026-04-03",
+  "subject": "Formatting tweaks (#3018)",
+  "files": 6,
+  "tests": 443,
+  "complete": false,
+  "symbols": 140,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Specs",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 20.03
+ },
+ {
+  "sha": "dceefbd4",
+  "date": "2026-03-14",
+  "subject": "Remove unused constant (#2986)",
+  "files": 1,
+  "tests": 3,
+  "complete": true,
+  "symbols": 11,
+  "projects": [
+   "Polly.Extensions.Tests"
+  ],
+  "seconds": 0.04
+ },
+ {
+  "sha": "b87f2034",
+  "date": "2026-03-14",
+  "subject": "Telemetry refactoring (#2985)",
+  "files": 4,
+  "tests": 224,
+  "complete": true,
+  "symbols": 189,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Specs",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 0.92
+ },
+ {
+  "sha": "016dd909",
+  "date": "2026-03-03",
+  "subject": "Fix `ScheduledTaskExecutor` deadlock when `TrySetResult` runs continua",
+  "files": 1,
+  "tests": 419,
+  "complete": false,
+  "symbols": 89,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Specs",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 20.74
+ },
+ {
+  "sha": "de3067c9",
+  "date": "2026-02-13",
+  "subject": ".NET 11 preparation (#2932)",
+  "files": 1,
+  "tests": 363,
+  "complete": false,
+  "symbols": 196,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Specs",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 20.03
+ },
+ {
+  "sha": "42b05ffe",
+  "date": "2025-12-18",
+  "subject": "Update to .NET 10 SDK (#2531)",
+  "files": 1,
+  "tests": 952,
+  "complete": false,
+  "symbols": 414,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Specs",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 20.03
+ },
+ {
+  "sha": "a83d82c8",
+  "date": "2025-12-04",
+  "subject": ".NET 10 preparation (#2842)",
+  "files": 2,
+  "tests": 0,
+  "complete": false,
+  "symbols": 24,
+  "projects": [],
+  "seconds": 20.02
+ },
+ {
+  "sha": "402adfaa",
+  "date": "2025-11-24",
+  "subject": "Refactor property-based tests",
+  "files": 1,
+  "tests": 19,
+  "complete": true,
+  "symbols": 9,
+  "projects": [
+   "Polly.Core.Tests"
+  ],
+  "seconds": 0.25
+ },
+ {
+  "sha": "156a9bbe",
+  "date": "2025-11-24",
+  "subject": "Add specification tests for jitter",
+  "files": 1,
+  "tests": 19,
+  "complete": true,
+  "symbols": 9,
+  "projects": [
+   "Polly.Core.Tests"
+  ],
+  "seconds": 0.17
+ },
+ {
+  "sha": "74bf31ff",
+  "date": "2025-11-21",
+  "subject": "Pass timeout to TimeoutRejectedException",
+  "files": 2,
+  "tests": 6,
+  "complete": true,
+  "symbols": 13,
+  "projects": [
+   "Polly.Specs"
+  ],
+  "seconds": 0.18
+ },
+ {
+  "sha": "836ac70e",
+  "date": "2025-10-11",
+  "subject": "Tidy formatting",
+  "files": 1,
+  "tests": 169,
+  "complete": true,
+  "symbols": 144,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Specs",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 0.34
+ },
+ {
+  "sha": "03ad74f0",
+  "date": "2025-10-11",
+  "subject": "Suppress S2094",
+  "files": 1,
+  "tests": 348,
+  "complete": true,
+  "symbols": 217,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Specs",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 1.83
+ },
+ {
+  "sha": "5f9462dc",
+  "date": "2025-09-25",
+  "subject": "Respect override for PipelineExecuting and PipelineExecuted (#2752)",
+  "files": 2,
+  "tests": 55,
+  "complete": true,
+  "symbols": 43,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 0.34
+ },
+ {
+  "sha": "65983195",
+  "date": "2025-09-06",
+  "subject": "Simplify code (#2740)",
+  "files": 22,
+  "tests": 777,
+  "complete": false,
+  "symbols": 386,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Specs"
+  ],
+  "seconds": 20.03
+ },
+ {
+  "sha": "6d5fcd61",
+  "date": "2025-08-23",
+  "subject": "xunit v3 preparation (#2723)",
+  "files": 1,
+  "tests": 6,
+  "complete": true,
+  "symbols": 6,
+  "projects": [
+   "Polly.Specs"
+  ],
+  "seconds": 0.15
+ },
+ {
+  "sha": "708b02b0",
+  "date": "2025-08-22",
+  "subject": "Fix documentation for ExecuteOutcomeAsync (#2710)",
+  "files": 5,
+  "tests": 215,
+  "complete": true,
+  "symbols": 151,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Specs",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 0.28
+ },
+ {
+  "sha": "651508bf",
+  "date": "2025-08-22",
+  "subject": "Fix flaky mutants",
+  "files": 1,
+  "tests": 419,
+  "complete": false,
+  "symbols": 103,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Specs",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 20.05
+ },
+ {
+  "sha": "1a7cee90",
+  "date": "2025-08-22",
+  "subject": "Use primary constructor",
+  "files": 1,
+  "tests": 13,
+  "complete": true,
+  "symbols": 25,
+  "projects": [
+   "Polly.Core.Tests"
+  ],
+  "seconds": 0.16
+ },
+ {
+  "sha": "32cab5f6",
+  "date": "2025-08-22",
+  "subject": "Make delegates static",
+  "files": 1,
+  "tests": 40,
+  "complete": true,
+  "symbols": 21,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 0.02
+ },
+ {
+  "sha": "c276803b",
+  "date": "2025-08-22",
+  "subject": "Use collection expressions",
+  "files": 8,
+  "tests": 594,
+  "complete": false,
+  "symbols": 269,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Specs",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 20.1
+ },
+ {
+  "sha": "a14508b9",
+  "date": "2025-08-22",
+  "subject": "Reduce async overhead (#2664)",
+  "files": 40,
+  "tests": 0,
+  "complete": false,
+  "symbols": 284,
+  "projects": [],
+  "seconds": 20.05
+ },
+ {
+  "sha": "13d124a9",
+  "date": "2025-07-08",
+  "subject": "Performance tweaks",
+  "files": 6,
+  "tests": 645,
+  "complete": false,
+  "symbols": 479,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Specs",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 20.04
+ },
+ {
+  "sha": "bbe88077",
+  "date": "2025-06-10",
+  "subject": "Fix overflow in BulkheadSemaphoreFactory (#2638)",
+  "files": 1,
+  "tests": 4,
+  "complete": true,
+  "symbols": 9,
+  "projects": [
+   "Polly.Specs"
+  ],
+  "seconds": 0.04
+ },
+ {
+  "sha": "c4193b50",
+  "date": "2025-06-03",
+  "subject": "Fix XML documentation (#2627)",
+  "files": 1,
+  "tests": 73,
+  "complete": true,
+  "symbols": 60,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests"
+  ],
+  "seconds": 0.79
+ },
+ {
+  "sha": "f56e106c",
+  "date": "2025-05-16",
+  "subject": ".NET 10 preparation (#2620)",
+  "files": 1,
+  "tests": 0,
+  "complete": true,
+  "symbols": 1,
+  "projects": [],
+  "seconds": 0.0
+ },
+ {
+  "sha": "198b42a1",
+  "date": "2025-05-04",
+  "subject": "Add AttemptNumber to HedgingPredicateArguments (#2603)",
+  "files": 2,
+  "tests": 521,
+  "complete": true,
+  "symbols": 101,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Specs",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 13.71
+ },
+ {
+  "sha": "b39b6c86",
+  "date": "2025-04-17",
+  "subject": "Dedupe links",
+  "files": 1,
+  "tests": 0,
+  "complete": true,
+  "symbols": 8,
+  "projects": [],
+  "seconds": 0.01
+ },
+ {
+  "sha": "2988010e",
+  "date": "2025-04-17",
+  "subject": "[docs] Add HTTP client integration samples (#2587)",
+  "files": 1,
+  "tests": 0,
+  "complete": true,
+  "symbols": 8,
+  "projects": [],
+  "seconds": 0.02
+ },
+ {
+  "sha": "e15a4a0a",
+  "date": "2025-04-11",
+  "subject": "[Docs] Dispose registry which contains rate limiters (#2578)",
+  "files": 1,
+  "tests": 419,
+  "complete": false,
+  "symbols": 82,
+  "projects": [
+   "Polly.Core.Tests",
+   "Polly.Extensions.Tests",
+   "Polly.RateLimiting.Tests",
+   "Polly.Specs",
+   "Polly.Testing.Tests"
+  ],
+  "seconds": 20.08
+ },
+ {
+  "sha": "d2ee43c5",
+  "date": "2025-04-07",
+  "subject": "Tweak docs formatting",
+  "files": 1,
+  "tests": 0,
+  "complete": true,
+  "symbols": 17,
+  "projects": [],
+  "seconds": 0.01
+ }
+]

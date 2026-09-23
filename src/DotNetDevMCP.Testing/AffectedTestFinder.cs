@@ -1,5 +1,6 @@
 // Copyright (c) 2025 Ahmed Mustafa
 
+using System.Collections.Immutable;
 using DotNetDevMCP.CodeIntelligence.Interfaces;
 using DotNetDevMCP.Core.Models;
 using Microsoft.CodeAnalysis;
@@ -20,21 +21,48 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
         "Fact", "Theory", "Test", "TestCase", "TestCaseSource", "TestMethod", "DataTestMethod",
     };
 
+    /// <summary>
+    /// Default time allowed for tracing. The cost is the reference count of what changed, not the symbol count: one busy type
+    /// (Outcome&lt;T&gt;, a context object) can have thousands of references. Past the budget, running everything is cheaper.
+    /// </summary>
+    public static readonly TimeSpan DefaultBudget = TimeSpan.FromSeconds(10); // Polly: every selection slower than 10 s reached 467+ tests, where a full run is cheaper
+
     /// <param name="maxDepth">Reference hops to follow from a changed symbol. 1 = tests that call the changed code directly.</param>
-    public async Task<IReadOnlyList<AffectedTest>> FindAsync(IEnumerable<string> changedFiles, int maxDepth, CancellationToken ct)
+    public Task<AffectedTestSelection> FindAsync(IEnumerable<string> changedFiles, int maxDepth, TimeSpan budget, CancellationToken ct) =>
+        FindAsync(solutions.CurrentSolution ?? throw new InvalidOperationException("No solution is loaded. Call SharpTool_LoadSolution or start with --load-solution."),
+            changedFiles, maxDepth, budget, logger, ct);
+
+    public static async Task<AffectedTestSelection> FindAsync(Solution solution, IEnumerable<string> changedFiles, int maxDepth, TimeSpan budget, ILogger logger, CancellationToken callerCt)
     {
-        var solution = solutions.CurrentSolution ?? throw new InvalidOperationException("No solution is loaded. Call SharpTool_LoadSolution or start with --load-solution.");
+        using var budgetCts = CancellationTokenSource.CreateLinkedTokenSource(callerCt);
+        budgetCts.CancelAfter(budget);
+        var ct = budgetCts.Token;
+
+        // Multi-targeted projects load once per TFM ("Polly.Core(net8.0)", "(net9.0)", ...). Searching all of them repeats every hop
+        // per TFM and the repeats compound per hop. Search one variant of each test project plus the projects it references.
+        var scope = SearchScope(solution);
+        var documents = scope.SelectMany(p => p.Documents).ToImmutableHashSet<Document>();
 
         var found = new Dictionary<string, AffectedTest>(StringComparer.Ordinal);
-        var seen = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+        var seen = new HashSet<string>(StringComparer.Ordinal); // by documentation id: the same method from another TFM is the same method
         var frontier = new List<(ISymbol Symbol, string Via)>();
 
-        foreach (var file in changedFiles)
+        void Visit(ISymbol symbol, string via, string? projectPath, List<(ISymbol, string)> into)
         {
-            var full = Path.GetFullPath(file);
-            foreach (var docId in solution.GetDocumentIdsWithFilePath(full))
+            if (!seen.Add(Key(symbol))) return;
+            if (symbol is IMethodSymbol m && IsTestMethod(m)) Add(found, m, via, projectPath);
+            else into.Add((symbol, via));
+        }
+
+        var searched = 0;
+        var complete = true;
+        try
+        {
+            foreach (var file in changedFiles)
             {
-                var doc = solution.GetDocument(docId);
+                var full = Path.GetFullPath(file);
+                var ids = solution.GetDocumentIdsWithFilePath(full);
+                var doc = solution.GetDocument(ids.FirstOrDefault(id => scope.Any(p => p.Id == id.ProjectId)) ?? ids.FirstOrDefault()!);
                 if (doc is null) continue;
                 var model = await doc.GetSemanticModelAsync(ct);
                 var root = await doc.GetSyntaxRootAsync(ct);
@@ -42,90 +70,115 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
 
                 foreach (var decl in root.DescendantNodes().OfType<MemberDeclarationSyntax>())
                 {
-                    // Fields: declared symbols live on the variables. Namespaces: references are every `using` in the solution.
-                    if (decl is FieldDeclarationSyntax or EventFieldDeclarationSyntax or BaseNamespaceDeclarationSyntax) continue;
-                    var symbol = model.GetDeclaredSymbol(decl, ct);
-                    if (symbol is null || !seen.Add(symbol)) continue;
-                    // A private member is only reachable through its type's non-private surface, which is also in this file.
-                    if (symbol.DeclaredAccessibility == Accessibility.Private && symbol is not INamedTypeSymbol) continue;
-                    var via = Path.GetFileName(full);
-                    if (symbol is IMethodSymbol m && IsTestMethod(m))
+                    foreach (var symbol in RunnableSymbols(decl, model, ct))
                     {
-                        Add(found, m, via, doc.Project.FilePath);
-                    }
-                    else
-                    {
-                        frontier.Add((symbol, via));
+                        Visit(symbol, Path.GetFileName(full), doc.Project.FilePath, frontier);
                     }
                 }
             }
-        }
 
-        for (var depth = 0; depth < maxDepth && frontier.Count > 0; depth++)
+            for (var depth = 0; depth < maxDepth && frontier.Count > 0; depth++)
+            {
+                searched += frontier.Count;
+                var next = new List<(ISymbol, string)>();
+                // FindReferences is the cost; the workspace is safe to read concurrently, but unbounded fan-out thrashes.
+                using var gate = new SemaphoreSlim(Environment.ProcessorCount);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var refsBySymbol = await Task.WhenAll(frontier.Select(async f =>
+                {
+                    await gate.WaitAsync(ct);
+                    try { return (f.Symbol, f.Via, Refs: await SymbolFinder.FindReferencesAsync(f.Symbol, solution, documents, ct)); }
+                    finally { gate.Release(); }
+                }));
+                logger.LogDebug("Depth {Depth}: {Symbols} symbols searched in {Ms} ms", depth + 1, frontier.Count, sw.ElapsedMilliseconds);
+                foreach (var (symbol, via, refs) in refsBySymbol)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    foreach (var location in refs.SelectMany(r => r.Locations))
+                    {
+                        var root = await location.Document.GetSyntaxRootAsync(ct);
+                        var model = await location.Document.GetSemanticModelAsync(ct);
+                        var member = root?.FindNode(location.Location.SourceSpan).AncestorsAndSelf().OfType<MemberDeclarationSyntax>()
+                            .FirstOrDefault(m => m is not BaseNamespaceDeclarationSyntax);
+                        if (member is null || model is null) continue;
+                        foreach (var enclosing in RunnableSymbols(member, model, ct))
+                        {
+                            Visit(enclosing, $"{via} -> {symbol.Name}", location.Document.Project.FilePath, next);
+                        }
+                    }
+                }
+                frontier = next;
+            }
+        }
+        catch (OperationCanceledException) when (!callerCt.IsCancellationRequested)
         {
-            var next = new List<(ISymbol, string)>();
-            // FindReferences is the cost; the workspace is safe to read concurrently, but unbounded fan-out thrashes.
-            using var gate = new SemaphoreSlim(Environment.ProcessorCount);
-            var refsBySymbol = await Task.WhenAll(frontier.Select(async f =>
-            {
-                await gate.WaitAsync(ct);
-                try
-                {
-                    var sw = System.Diagnostics.Stopwatch.StartNew();
-                    var refs = await SymbolFinder.FindReferencesAsync(f.Symbol, solution, ct);
-                    logger.LogDebug("FindReferences {Symbol} ({Kind}): {Count} locations in {Ms} ms", f.Symbol.ToDisplayString(), f.Symbol.Kind, refs.Sum(r => r.Locations.Count()), sw.ElapsedMilliseconds);
-                    return (f.Symbol, f.Via, Refs: refs);
-                }
-                finally { gate.Release(); }
-            }));
-            logger.LogDebug("Depth {Depth}: {Symbols} symbols searched", depth + 1, frontier.Count);
-            foreach (var (symbol, via, refs) in refsBySymbol)
-            {
-                ct.ThrowIfCancellationRequested();
-                foreach (var location in refs.SelectMany(r => r.Locations))
-                {
-                    var enclosing = await EnclosingMemberAsync(location, ct);
-                    if (enclosing is null || !seen.Add(enclosing)) continue;
-                    if (enclosing.DeclaredAccessibility == Accessibility.Private && enclosing is not INamedTypeSymbol)
-                    {
-                        enclosing = enclosing.ContainingType; // hop through the type's public surface instead
-                        if (enclosing is null || !seen.Add(enclosing)) continue;
-                    }
-                    var chain = $"{via} -> {symbol.Name}";
-                    if (enclosing is IMethodSymbol m && IsTestMethod(m))
-                    {
-                        Add(found, m, chain, location.Document.Project.FilePath);
-                    }
-                    else
-                    {
-                        next.Add((enclosing, chain));
-                    }
-                }
-            }
-            frontier = next;
+            // Out of budget. What was found is a partial set; reporting that is safe, silently returning it is not.
+            logger.LogInformation("Affected-test walk out of its {Budget}s budget after {Symbols} symbols", budget.TotalSeconds, searched);
+            complete = false;
         }
 
-        return found.Values.OrderBy(t => t.ProjectPath).ThenBy(t => t.FullyQualifiedName).ToList();
+        var tests = found.Values.OrderBy(t => t.ProjectPath).ThenBy(t => t.FullyQualifiedName).ToList();
+        return new AffectedTestSelection(tests, complete, searched);
+    }
+
+    /// <summary>
+    /// The code a declaration runs as. A type or a field runs through its constructors (initializers execute there),
+    /// so hop through those, never through the type itself: every mention of a busy type would pull in half the solution.
+    /// </summary>
+    private static IEnumerable<ISymbol> RunnableSymbols(MemberDeclarationSyntax decl, SemanticModel model, CancellationToken ct)
+    {
+        if (decl is BaseFieldDeclarationSyntax field)
+        {
+            // The field itself too: readers see what the initializer built. xUnit [MemberData(nameof(Data))] reaches a static
+            // data field only this way, since nothing references the static constructor its initializer runs in.
+            var fields = field.Declaration.Variables.Select(v => model.GetDeclaredSymbol(v, ct)).OfType<ISymbol>().ToList();
+            return fields.Count == 0 ? [] : fields.Concat(Constructors(fields[0].ContainingType));
+        }
+        return model.GetDeclaredSymbol(decl, ct) switch
+        {
+            INamedTypeSymbol type => Constructors(type),
+            { } s when s is IMethodSymbol or IPropertySymbol or IEventSymbol or IFieldSymbol /* enum member */ => [s],
+            _ => [],
+        };
+    }
+
+    private static IEnumerable<ISymbol> Constructors(INamedTypeSymbol type) => type.InstanceConstructors.Concat(type.StaticConstructors);
+
+    private static string Key(ISymbol s) => s.OriginalDefinition.GetDocumentationCommentId() ?? s.OriginalDefinition.ToDisplayString();
+
+    private static List<Project> SearchScope(Solution solution)
+    {
+        var scope = new Dictionary<ProjectId, Project>();
+        void AddWithReferences(Project p)
+        {
+            if (!scope.TryAdd(p.Id, p)) return;
+            foreach (var r in p.ProjectReferences) if (solution.GetProject(r.ProjectId) is { } rp) AddWithReferences(rp);
+        }
+        // One variant per test project file: the highest TFM, compared as a version ("net10.0" sorts before "net9.0" as text).
+        foreach (var variants in solution.Projects.Where(IsTestProject).GroupBy(p => p.FilePath ?? p.Name))
+        {
+            AddWithReferences(variants.OrderByDescending(p => TfmVersion(p.Name)).First());
+        }
+        return scope.Count > 0 ? scope.Values.ToList() : solution.Projects.ToList();
+    }
+
+    private static bool IsTestProject(Project p) => p.MetadataReferences.Any(r =>
+        Path.GetFileName(r.Display ?? "") is var f && (f.StartsWith("xunit", StringComparison.OrdinalIgnoreCase) || f.StartsWith("nunit", StringComparison.OrdinalIgnoreCase)
+            || f.StartsWith("Microsoft.VisualStudio.TestPlatform.TestFramework", StringComparison.OrdinalIgnoreCase) || f.StartsWith("TUnit", StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>"Polly.Core.Tests(net10.0)" -> 10.0; no TFM suffix -> 0.</summary>
+    private static Version TfmVersion(string projectName)
+    {
+        var open = projectName.LastIndexOf("(net", StringComparison.Ordinal);
+        if (open < 0) return new Version(0, 0);
+        var digits = new string(projectName[(open + 4)..].TakeWhile(c => char.IsDigit(c) || c == '.').ToArray());
+        return Version.TryParse(digits.Contains('.') ? digits : digits + ".0", out var v) ? v : new Version(0, 0);
     }
 
     private static void Add(Dictionary<string, AffectedTest> found, IMethodSymbol test, string via, string? projectPath)
     {
         var fqn = FullyQualifiedName(test);
         found.TryAdd(fqn, new AffectedTest(fqn, projectPath ?? "", via));
-    }
-
-    private static async Task<ISymbol?> EnclosingMemberAsync(ReferenceLocation location, CancellationToken ct)
-    {
-        var root = await location.Document.GetSyntaxRootAsync(ct);
-        var model = await location.Document.GetSemanticModelAsync(ct);
-        if (root is null || model is null) return null;
-        var node = root.FindNode(location.Location.SourceSpan);
-        var member = node.AncestorsAndSelf().OfType<MemberDeclarationSyntax>()
-            .FirstOrDefault(m => m is not (FieldDeclarationSyntax or EventFieldDeclarationSyntax or BaseNamespaceDeclarationSyntax));
-        if (member is null) return null;
-        var symbol = model.GetDeclaredSymbol(member, ct);
-        // A reference inside a property/ctor/field initializer: treat the containing type as the next hop.
-        return symbol is IMethodSymbol or INamedTypeSymbol ? symbol : symbol?.ContainingType;
     }
 
     private static bool IsTestMethod(IMethodSymbol m) =>

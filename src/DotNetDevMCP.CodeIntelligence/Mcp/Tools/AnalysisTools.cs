@@ -710,77 +710,80 @@ public static partial class AnalysisTools {
             var maxToShow = 20;
             int count = 0;
 
+            // Multi-targeted projects load once per TFM, so each source location comes back once per TFM: count and show it once.
+            var uniqueLocations = referencedSymbols.SelectMany(rs => rs.Locations)
+                .Where(l => l.Location.IsInSource)
+                .DistinctBy(l => (l.Document.FilePath, l.Location.SourceSpan.Start))
+                .ToList();
+
             try {
-                foreach (var refGroup in referencedSymbols) {
-                    foreach (var location in refGroup.Locations) {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        if (count >= maxToShow) break;
+                foreach (var location in uniqueLocations) {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (count >= maxToShow) break;
 
-                        if (location.Document != null && location.Location.IsInSource) {
+                    if (location.Document != null && location.Location.IsInSource) {
+                        try {
+                            var sourceTree = location.Location.SourceTree;
+                            if (sourceTree == null) {
+                                logger.LogWarning("Null source tree for reference location in {FilePath}",
+                                    location.Document.FilePath ?? "unknown file");
+                                continue;
+                            }
+
+                            var sourceText = await sourceTree.GetTextAsync(cancellationToken);
+                            var lineSpan = location.Location.GetLineSpan();
+
+                            var contextLines = new List<string>();
+                            const int linesAround = 2;
+                            for (int i = Math.Max(0, lineSpan.StartLinePosition.Line - linesAround);
+                                 i <= Math.Min(sourceText.Lines.Count - 1, lineSpan.EndLinePosition.Line + linesAround);
+                                 i++) {
+                                contextLines.Add(TrimLeadingWhitespace(sourceText.Lines[i].ToString()));
+                            }
+
+                            string parentMember = "N/A";
                             try {
-                                var sourceTree = location.Location.SourceTree;
-                                if (sourceTree == null) {
-                                    logger.LogWarning("Null source tree for reference location in {FilePath}",
-                                        location.Document.FilePath ?? "unknown file");
-                                    continue;
-                                }
+                                var syntaxRoot = await sourceTree.GetRootAsync(cancellationToken);
+                                var token = syntaxRoot.FindToken(location.Location.SourceSpan.Start);
 
-                                var sourceText = await sourceTree.GetTextAsync(cancellationToken);
-                                var lineSpan = location.Location.GetLineSpan();
+                                if (token.Parent != null) {
+                                    var memberDecl = token.Parent
+                                        .AncestorsAndSelf()
+                                        .OfType<MemberDeclarationSyntax>()
+                                        .FirstOrDefault();
 
-                                var contextLines = new List<string>();
-                                const int linesAround = 2;
-                                for (int i = Math.Max(0, lineSpan.StartLinePosition.Line - linesAround);
-                                     i <= Math.Min(sourceText.Lines.Count - 1, lineSpan.EndLinePosition.Line + linesAround);
-                                     i++) {
-                                    contextLines.Add(TrimLeadingWhitespace(sourceText.Lines[i].ToString()));
-                                }
-
-                                string parentMember = "N/A";
-                                try {
-                                    var syntaxRoot = await sourceTree.GetRootAsync(cancellationToken);
-                                    var token = syntaxRoot.FindToken(location.Location.SourceSpan.Start);
-
-                                    if (token.Parent != null) {
-                                        var memberDecl = token.Parent
-                                            .AncestorsAndSelf()
-                                            .OfType<MemberDeclarationSyntax>()
-                                            .FirstOrDefault();
-
-                                        if (memberDecl != null) {
-                                            var semanticModel = await solutionManager.GetSemanticModelAsync(location.Document.Id, cancellationToken);
-                                            var parentSymbol = semanticModel?.GetDeclaredSymbol(memberDecl, cancellationToken);
-                                            if (parentSymbol != null) {
-                                                parentMember = CodeAnalysisService.GetFormattedSignatureAsync(parentSymbol, false) +
-                                                    $" //FQN: {FuzzyFqnLookupService.GetSearchableString(parentSymbol)}";
-                                            }
+                                    if (memberDecl != null) {
+                                        var semanticModel = await solutionManager.GetSemanticModelAsync(location.Document.Id, cancellationToken);
+                                        var parentSymbol = semanticModel?.GetDeclaredSymbol(memberDecl, cancellationToken);
+                                        if (parentSymbol != null) {
+                                            parentMember = CodeAnalysisService.GetFormattedSignatureAsync(parentSymbol, false) +
+                                                $" //FQN: {FuzzyFqnLookupService.GetSearchableString(parentSymbol)}";
                                         }
                                     }
-                                } catch (Exception ex) {
-                                    logger.LogWarning(ex, "Error getting parent member for reference in {FilePath}",
-                                        location.Document.FilePath ?? "unknown file");
                                 }
-
-                                references.Add(new {
-                                    location = new {
-                                        filePath = location.Document.FilePath,
-                                        startLine = lineSpan.StartLinePosition.Line + 1,
-                                        endLine = lineSpan.EndLinePosition.Line + 1,
-                                    },
-                                    context = string.Join(Environment.NewLine, contextLines),
-                                    parentMember
-                                });
-                                count++;
-                            } catch (Exception ex) when (!(ex is OperationCanceledException)) {
-                                logger.LogWarning(ex, "Error processing reference location in {FilePath}",
+                            } catch (Exception ex) {
+                                logger.LogWarning(ex, "Error getting parent member for reference in {FilePath}",
                                     location.Document.FilePath ?? "unknown file");
                             }
+
+                            references.Add(new {
+                                location = new {
+                                    filePath = location.Document.FilePath,
+                                    startLine = lineSpan.StartLinePosition.Line + 1,
+                                    endLine = lineSpan.EndLinePosition.Line + 1,
+                                },
+                                context = string.Join(Environment.NewLine, contextLines),
+                                parentMember
+                            });
+                            count++;
+                        } catch (Exception ex) when (!(ex is OperationCanceledException)) {
+                            logger.LogWarning(ex, "Error processing reference location in {FilePath}",
+                                location.Document.FilePath ?? "unknown file");
                         }
                     }
-                    if (count >= maxToShow) break;
                 }
 
-                var totalReferences = referencedSymbols.Sum(rs => rs.Locations.Count());
+                var totalReferences = uniqueLocations.Count;
                 return ToolHelpers.ToJson(new {
                     kind = ToolHelpers.GetSymbolKindString(symbol),
                     signature = CodeAnalysisService.GetFormattedSignatureAsync(symbol, false),

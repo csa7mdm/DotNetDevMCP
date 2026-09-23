@@ -53,3 +53,9 @@ public record TestRunSummary(
 
 /// <summary>A test method that (transitively) references a changed symbol.</summary>
 public record AffectedTest(string FullyQualifiedName, string ProjectPath, string Via);
+
+/// <summary>
+/// Tests reached from a change. Complete = false means the reference walk ran out of its time budget: the change reaches too much
+/// code to trace cheaply, Tests is a partial set, and every test should run instead.
+/// </summary>
+public record AffectedTestSelection(IReadOnlyList<AffectedTest> Tests, bool Complete, int SymbolsSearched);

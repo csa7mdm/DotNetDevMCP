@@ -1,7 +1,9 @@
 // Copyright (c) 2025 Ahmed Mustafa
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
 using System.Xml.Linq;
 using DotNetDevMCP.Core.Models;
 
@@ -18,7 +20,7 @@ public sealed class TestRunner
     public async Task<IReadOnlyList<TestCase>> DiscoverAsync(string projectPath, string? filter, CancellationToken ct)
     {
         projectPath = Path.GetFullPath(projectPath);
-        var (exit, stdout, stderr) = await RunDotnetAsync($"test \"{projectPath}\" --list-tests{FilterArg(filter)}", ct);
+        var (exit, stdout, stderr) = await RunDotnetAsync($"test \"{projectPath}\" --list-tests{FilterArg(filter)}", ct, DirectoryOf(projectPath));
         if (exit != 0)
         {
             throw new InvalidOperationException($"dotnet test --list-tests failed:\n{Tail(stdout + stderr)}");
@@ -38,9 +40,99 @@ public sealed class TestRunner
     }
 
     /// <param name="testNames">Fully qualified names; empty runs everything the filter allows.</param>
-    public async Task<TestRunSummary> RunAsync(string projectOrSolutionPath, string? filter, IReadOnlyCollection<string>? testNames, bool noBuild, CancellationToken ct)
+    /// <param name="framework">Target framework to run (e.g. net10.0); null runs every TFM the projects target.</param>
+    public async Task<TestRunSummary> RunAsync(string projectOrSolutionPath, string? filter, IReadOnlyCollection<string>? testNames, bool noBuild, string? framework, CancellationToken ct)
     {
         projectOrSolutionPath = Path.GetFullPath(projectOrSolutionPath);
+        return UsesTestingPlatform(projectOrSolutionPath)
+            ? await RunTestingPlatformAsync(projectOrSolutionPath, filter, testNames, noBuild, framework, ct)
+            : await RunVsTestAsync(projectOrSolutionPath, filter, testNames, noBuild, framework, ct);
+    }
+
+    /// <summary>
+    /// .NET 10 `dotnet test` runs in Microsoft.Testing.Platform mode when global.json has "test": { "runner": "Microsoft.Testing.Platform" }.
+    /// That mode rejects the VSTest options (--logger, --filter expression, positional path).
+    /// </summary>
+    public static bool UsesTestingPlatform(string path)
+    {
+        for (var dir = File.Exists(path) ? Path.GetDirectoryName(path) : path; dir is not null; dir = Path.GetDirectoryName(dir))
+        {
+            var globalJson = Path.Combine(dir, "global.json");
+            if (!File.Exists(globalJson)) continue;
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(globalJson), new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+                return doc.RootElement.TryGetProperty("test", out var test)
+                    && test.TryGetProperty("runner", out var runner)
+                    && string.Equals(runner.GetString(), "Microsoft.Testing.Platform", StringComparison.OrdinalIgnoreCase);
+            }
+            catch (JsonException) { return false; }
+        }
+        return false;
+    }
+
+    // Report and filter options are framework extensions under MTP: xUnit v3 has --report-xunit-trx / --filter-method,
+    // MSTest and NUnit have --report-trx / --filter. Try xUnit first; exit code 5 (invalid command line) means the other.
+    // ponytail: one flavor per path; a solution mixing xUnit v3 and MSTest projects under MTP is not handled.
+    private static readonly ConcurrentDictionary<string, bool> IsXunitByPath = new(StringComparer.OrdinalIgnoreCase);
+    private const int MtpInvalidCommandLine = 5;
+    private const int MtpZeroTestsRan = 8;
+
+    private async Task<TestRunSummary> RunTestingPlatformAsync(string path, string? filter, IReadOnlyCollection<string>? testNames, bool noBuild, string? framework, CancellationToken ct)
+    {
+        var target = path.EndsWith("proj", StringComparison.OrdinalIgnoreCase) ? "--project"
+            : Directory.Exists(path) ? "--directory" : "--solution";
+        var sw = Stopwatch.StartNew();
+        (int ExitCode, string Stdout, string Stderr) run = default;
+        foreach (var xunit in IsXunitByPath.TryGetValue(path, out var known) ? new[] { known } : new[] { true, false })
+        {
+            var args = new StringBuilder($"test {target} \"{path}\"");
+            if (noBuild) args.Append(" --no-build");
+            if (!string.IsNullOrWhiteSpace(framework)) args.Append($" --framework {framework}");
+            args.Append(xunit ? " --report-xunit-trx" : " --report-trx");
+            args.Append(TestingPlatformNameFilter(testNames, xunit));
+            if (!string.IsNullOrWhiteSpace(filter)) args.Append(' ').Append(filter); // the framework's own filter options, verbatim
+            run = await RunDotnetAsync(args.ToString(), ct, DirectoryOf(path));
+            if (run.ExitCode != MtpInvalidCommandLine) { IsXunitByPath[path] = xunit; break; }
+            noBuild = true; // the first attempt already built
+        }
+        sw.Stop();
+
+        // No --results-directory: repos often set their own through TestingPlatformCommandLineArguments and MTP rejects a second one.
+        // Every module prints the files it wrote under "file artifacts produced", one "- <path>" per line.
+        var trxFiles = (run.Stdout + "\n" + run.Stderr).Split('\n')
+            .Select(l => l.Trim())
+            .Where(l => l.StartsWith("- ", StringComparison.Ordinal) && l.EndsWith(".trx", StringComparison.OrdinalIgnoreCase))
+            .Select(l => l[2..].Trim())
+            .Where(File.Exists)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (trxFiles.Length == 0)
+        {
+            return TestRunSummary.Failed(run.ExitCode == MtpZeroTestsRan ? "Zero tests ran (the filter matched nothing)." : Tail(run.Stdout + run.Stderr), sw.Elapsed);
+        }
+        return TestRunSummary.Merge(trxFiles.Select(ParseTrx)) with { Duration = sw.Elapsed };
+    }
+
+    /// <summary>Exact-name filter for MTP. Past the Windows command-line limit it widens to classes, then to the whole target (a superset, never fewer tests).</summary>
+    public static string TestingPlatformNameFilter(IReadOnlyCollection<string>? names, bool xunit)
+    {
+        if (names is not { Count: > 0 }) return "";
+        string Build(IEnumerable<string> items, string xunitOption, Func<string, string> vstestTerm) => xunit
+            ? string.Concat(items.Select(n => $" {xunitOption} \"{n}\""))
+            : $" --filter \"{string.Join("|", items.Select(vstestTerm))}\"";
+
+        var byMethod = Build(names, "--filter-method", n => $"FullyQualifiedName={n}");
+        if (byMethod.Length <= MaxFilterChars) return byMethod;
+        var classes = names.Select(n => n.LastIndexOf('.') is var i and > 0 ? n[..i] : n).Distinct().ToList();
+        var byClass = Build(classes, "--filter-class", c => $"FullyQualifiedName~{c}.");
+        return byClass.Length <= MaxFilterChars ? byClass : "";
+    }
+
+    private const int MaxFilterChars = 24_000; // Windows caps a command line at 32,767 chars
+
+    private async Task<TestRunSummary> RunVsTestAsync(string projectOrSolutionPath, string? filter, IReadOnlyCollection<string>? testNames, bool noBuild, string? framework, CancellationToken ct)
+    {
         var resultsDir = Path.Combine(Path.GetTempPath(), "dotnetdevmcp-trx", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(resultsDir);
 
@@ -55,10 +147,11 @@ public sealed class TestRunner
 
         var args = new StringBuilder($"test \"{projectOrSolutionPath}\" --logger trx --results-directory \"{resultsDir}\"");
         if (noBuild) args.Append(" --no-build");
+        if (!string.IsNullOrWhiteSpace(framework)) args.Append($" --framework {framework}");
         args.Append(FilterArg(fullFilter));
 
         var sw = Stopwatch.StartNew();
-        var (exit, stdout, stderr) = await RunDotnetAsync(args.ToString(), ct);
+        var (exit, stdout, stderr) = await RunDotnetAsync(args.ToString(), ct, DirectoryOf(projectOrSolutionPath));
         sw.Stop();
 
         var trxFiles = Directory.GetFiles(resultsDir, "*.trx", SearchOption.AllDirectories);
@@ -124,6 +217,12 @@ public sealed class TestRunner
         var all = s.Split('\n').Where(l => l.Trim().Length > 0).ToArray();
         return string.Join("\n", all.Skip(Math.Max(0, all.Length - lines)));
     }
+
+    /// <summary>
+    /// Where to start `dotnet` for a path. The CLI reads global.json from its working directory: the pinned SDK and the
+    /// test runner mode (VSTest or Microsoft.Testing.Platform) both come from there, not from the project's location.
+    /// </summary>
+    public static string DirectoryOf(string path) => Directory.Exists(path) ? path : Path.GetDirectoryName(Path.GetFullPath(path))!;
 
     internal static Task<(int ExitCode, string Stdout, string Stderr)> RunDotnetAsync(string arguments, CancellationToken ct, string? workingDirectory = null)
         => RunProcessAsync("dotnet", arguments, ct, workingDirectory);

@@ -1,0 +1,62 @@
+[
+ {
+  "symbol": "Polly.ResilienceContext.CancellationToken",
+  "name": "CancellationToken",
+  "roslyn_refs": 137,
+  "roslyn_seconds": 8.71,
+  "roslyn_chars": 12242,
+  "grep_lines": 1354,
+  "grep_chars": 201583,
+  "error": null
+ },
+ {
+  "symbol": "Polly.Retry.RetryStrategyOptions<TResult>.Delay",
+  "name": "Delay",
+  "roslyn_refs": 49,
+  "roslyn_seconds": 2.93,
+  "roslyn_chars": 12986,
+  "grep_lines": 153,
+  "grep_chars": 20778,
+  "error": null
+ },
+ {
+  "symbol": "Polly.Timeout.TimeoutStrategyOptions.Timeout",
+  "name": "Timeout",
+  "roslyn_refs": 15,
+  "roslyn_seconds": 1.18,
+  "roslyn_chars": 9351,
+  "grep_lines": 439,
+  "grep_chars": 58920,
+  "error": null
+ },
+ {
+  "symbol": "Polly.Outcome<TResult>.Exception",
+  "name": "Exception",
+  "roslyn_refs": 113,
+  "roslyn_seconds": 1.3,
+  "roslyn_chars": 13950,
+  "grep_lines": 1537,
+  "grep_chars": 215599,
+  "error": null
+ },
+ {
+  "symbol": "Polly.RetryResiliencePipelineBuilderExtensions.AddRetry",
+  "name": "AddRetry",
+  "roslyn_refs": null,
+  "roslyn_seconds": 0.63,
+  "roslyn_chars": 345,
+  "grep_lines": 105,
+  "grep_chars": 11029,
+  "error": "[isError] An error occurred invoking 'SharpTool_FindReferences': FQN was ambiguous, did you mean one of these?\nPolly.RetryResiliencePipelineBuilderExtensions.AddRetry(ResiliencePipelineBuilder,RetrySt"
+ },
+ {
+  "symbol": "Polly.Retry.RetryStrategyOptions<TResult>.MaxRetryAttempts",
+  "name": "MaxRetryAttempts",
+  "roslyn_refs": 73,
+  "roslyn_seconds": 0.44,
+  "roslyn_chars": 11359,
+  "grep_lines": 79,
+  "grep_chars": 7791,
+  "error": null
+ }
+]
