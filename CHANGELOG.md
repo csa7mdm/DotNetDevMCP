@@ -15,6 +15,7 @@ Found by running the tools on [Polly](https://github.com/App-vNext/Polly); metho
 ### Changed
 - `dotnet_test_affected` default `maxDepth` is 8 (was 3): at 3 the selections missed tests reached through overload chains. With the fixes below they included 111 of the 112 tests that injected faults broke in Polly, up from 101.
 - Affected test projects build one at a time, then run in parallel; parallel builds of projects sharing references collided on file locks.
+- Git (`git_repo_status`, `git_list_branches`, ..., 10 tools) and Monitoring (`dotnet_get_performance_metrics`, ..., 6 tools) are now opt-in via `--enable git,monitoring`, off by default: they add nothing over the shell an agent already has, and every registered tool costs context tokens in every session. The server now exposes 37 tools by default instead of 53.
 
 ### Fixed
 - Affected-test selection never finished on multi-targeted solutions (over 70 minutes on Polly for one commit): every TFM of every project was searched, the same symbols were walked once per TFM, and hops went through whole types. It now searches one TFM variant of each test project with its references, recognizes a symbol across TFMs, and hops through constructors instead of types.

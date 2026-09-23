@@ -3,6 +3,7 @@
 // or Streamable HTTP with --http for remote/shared use.
 
 using System.CommandLine;
+using System.CommandLine.Parsing;
 using System.Reflection;
 using DotNetDevMCP.Analysis.Extensions;
 using DotNetDevMCP.Build.Extensions;
@@ -39,10 +40,17 @@ public static class Program
         var buildConfigurationOption = new Option<string?>("--build-configuration") { Description = "Build configuration used when loading the solution (Debug, Release)." };
         var gitCommitEditsOption = new Option<bool>("--git-commit-edits") { Description = "Let edit tools (RenameSymbol, OverwriteMember, AddMember, MoveMember, FindAndReplace, CreateRoslynDocument, OverwriteRoslynDocument, ManageUsings, ManageAttributes) create a git branch and commit after each change, and enable SharpTool_Undo. Off by default: edits are still applied to disk and compile-checked, they just don't touch git or your current branch." };
         var disableGitOption = new Option<bool>("--disable-git") { Description = "Deprecated, no-op. Git integration in code-intelligence tools is off by default; use --git-commit-edits to opt in." };
+        var enableOption = new Option<string[]>("--enable")
+        {
+            Description = "Enable optional tool groups, off by default: 'git' (repo status/branch/stage/commit/push/pull/log/diff) and 'monitoring' (process performance/GC/health/profiling). Comma-separated and/or repeated, e.g. \"--enable git,monitoring\" or \"--enable git --enable monitoring\".",
+            AllowMultipleArgumentsPerToken = true,
+            DefaultValueFactory = _ => [],
+            CustomParser = ParseEnableGroups
+        };
 
         var root = new RootCommand("DotNetDevMCP - MCP server for .NET development: Roslyn code intelligence, build, affected-test selection, git, orchestration.")
         {
-            httpOption, portOption, logDirOption, logLevelOption, loadSolutionOption, buildConfigurationOption, gitCommitEditsOption, disableGitOption
+            httpOption, portOption, logDirOption, logLevelOption, loadSolutionOption, buildConfigurationOption, gitCommitEditsOption, disableGitOption, enableOption
         };
 
         var parsed = root.Parse(args);
@@ -61,6 +69,9 @@ public static class Program
         string? buildConfiguration = parsed.GetValue(buildConfigurationOption);
         bool gitCommitEdits = parsed.GetValue(gitCommitEditsOption);
         bool disableGitLegacyFlag = parsed.GetValue(disableGitOption);
+        string[] enabledGroups = parsed.GetValue(enableOption) ?? [];
+        bool enableGit = enabledGroups.Contains("git");
+        bool enableMonitoring = enabledGroups.Contains("monitoring");
 
         Log.Logger = BuildLogger(logLevel, logDir);
 
@@ -73,7 +84,9 @@ public static class Program
         {
             Log.Information("Starting {App} v{Version} ({Transport})", ApplicationName, ApplicationVersion, http ? $"http://localhost:{port}" : "stdio");
 
-            IHost host = http ? BuildHttpHost(args, port, gitCommitEdits, buildConfiguration) : BuildStdioHost(args, gitCommitEdits, buildConfiguration);
+            IHost host = http
+                ? BuildHttpHost(args, port, gitCommitEdits, buildConfiguration, enableGit, enableMonitoring)
+                : BuildStdioHost(args, gitCommitEdits, buildConfiguration, enableGit, enableMonitoring);
 
             if (!string.IsNullOrEmpty(solutionPath))
             {
@@ -94,46 +107,78 @@ public static class Program
         }
     }
 
-    private static IHost BuildStdioHost(string[] args, bool gitCommitEdits, string? buildConfiguration)
+    private static IHost BuildStdioHost(string[] args, bool gitCommitEdits, string? buildConfiguration, bool enableGit, bool enableMonitoring)
     {
         var builder = Host.CreateApplicationBuilder(args);
         builder.Logging.ClearProviders();
         builder.Logging.AddSerilog();
-        AddServices(builder.Services, gitCommitEdits, buildConfiguration).WithStdioServerTransport();
+        AddServices(builder.Services, gitCommitEdits, buildConfiguration, enableGit, enableMonitoring).WithStdioServerTransport();
         return builder.Build();
     }
 
-    private static IHost BuildHttpHost(string[] args, int port, bool gitCommitEdits, string? buildConfiguration)
+    private static IHost BuildHttpHost(string[] args, int port, bool gitCommitEdits, string? buildConfiguration, bool enableGit, bool enableMonitoring)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args });
         builder.Host.UseSerilog();
         builder.WebHost.UseUrls($"http://localhost:{port}");
-        AddServices(builder.Services, gitCommitEdits, buildConfiguration).WithHttpTransport();
+        AddServices(builder.Services, gitCommitEdits, buildConfiguration, enableGit, enableMonitoring).WithHttpTransport();
         var app = builder.Build();
         app.MapMcp();
         return app;
     }
 
     /// <summary>Registers every service and every MCP tool of the server. One place, so nothing gets left out again.</summary>
-    private static IMcpServerBuilder AddServices(IServiceCollection services, bool gitCommitEdits, string? buildConfiguration)
+    /// <remarks>
+    /// Git (<see cref="DotNetDevMCP.SourceControl"/>) and Monitoring (<see cref="MonitoringTools"/>) are opt-in via
+    /// <c>--enable git,monitoring</c>: a product review found they add nothing over the shell an agent already has,
+    /// and every registered tool costs context tokens in every session. Their services are only registered when the
+    /// corresponding group is enabled, since nothing else in the server depends on them.
+    /// </remarks>
+    private static IMcpServerBuilder AddServices(IServiceCollection services, bool gitCommitEdits, string? buildConfiguration, bool enableGit, bool enableMonitoring)
     {
         services.WithCodeIntelligenceServices(gitCommitEdits, buildConfiguration);
         services.AddAnalysisServices();
-        services.AddMonitoringServices();
         services.WithOrchestrationServices();
         services.WithTestingServices();
         services.WithBuildServices();
-        services.WithSourceControlServices();
+        if (enableGit) services.WithSourceControlServices();
+        if (enableMonitoring) services.AddMonitoringServices();
 
-        return services
+        var mcp = services
             .AddMcpServer(o => o.ServerInfo = new Implementation { Name = ApplicationName, Version = ApplicationVersion })
             .WithCodeIntelligence()
             .WithOrchestration()
             .WithTesting()
             .WithBuild()
-            .WithSourceControl()
-            .WithTools<Analysis.Mcp.Tools.AnalysisTools>()
-            .WithTools<MonitoringTools>();
+            .WithTools<Analysis.Mcp.Tools.AnalysisTools>();
+
+        if (enableGit) mcp = mcp.WithSourceControl();
+        if (enableMonitoring) mcp = mcp.WithTools<MonitoringTools>();
+
+        return mcp;
+    }
+
+    private static readonly string[] ValidEnableGroups = ["git", "monitoring"];
+
+    /// <summary>Custom parser for <c>--enable</c>: splits comma-separated and/or repeated tokens, lower-cases them,
+    /// and reports a clear error (listing the valid groups) for anything unrecognized.</summary>
+    private static string[] ParseEnableGroups(ArgumentResult result)
+    {
+        var groups = new List<string>();
+        foreach (var token in result.Tokens)
+        {
+            foreach (var part in token.Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var group = part.ToLowerInvariant();
+                if (!ValidEnableGroups.Contains(group))
+                {
+                    result.AddError($"Unknown --enable value '{part}'. Valid values: {string.Join(", ", ValidEnableGroups)}.");
+                    continue;
+                }
+                groups.Add(group);
+            }
+        }
+        return [.. groups];
     }
 
     private static async Task LoadSolutionAsync(IServiceProvider services, string solutionPath)

@@ -40,14 +40,30 @@ jobs:
         shell: bash
         run: |
           exe=$(find src/DotNetDevMCP.Server/bin/Release/net10.0 -maxdepth 1 -name 'dotnetdevmcp' -o -maxdepth 1 -name 'dotnetdevmcp.exe' | head -1)
+
+          # Counts "name":" only in the tools/list response line (id 2), not the initialize
+          # response's serverInfo.name, so the count is exactly the number of tools.
+          count_tools() {
+            grep '"id":2' "$1" | grep -o '"name":"' | wc -l
+          }
+
           { printf '%s\n' \
               '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
               '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
               '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'; sleep 5; } \
-            | "$exe" --log-level Warning 2>/dev/null > smoke.out || true
-          count=$(grep -o '"name":"' smoke.out | wc -l)
-          echo "tools listed: $count"
-          test "$count" -ge 50
+            | "$exe" --log-level Warning 2>/dev/null > smoke-default.out || true
+          count=$(count_tools smoke-default.out)
+          echo "tools listed (default): $count"
+          test "$count" -eq 37
+
+          { printf '%s\n' \
+              '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+              '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+              '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'; sleep 5; } \
+            | "$exe" --log-level Warning --enable git,monitoring 2>/dev/null > smoke-enabled.out || true
+          count=$(count_tools smoke-enabled.out)
+          echo "tools listed (--enable git,monitoring): $count"
+          test "$count" -eq 53
 
       - name: Pack tool
         if: matrix.os == 'ubuntu-latest'
