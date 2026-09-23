@@ -1,7 +1,8 @@
 name: Release
 
 # Tag `vX.Y.Z` -> build, test, pack the tool, publish to NuGet.org, create a GitHub release.
-# Requires repository secret NUGET_API_KEY (nuget.org API key scoped to push DotNetDevMCP).
+# Uses nuget.org Trusted Publishing (OIDC, no stored API key). Needs a nuget.org policy for
+# owner csa7mdm / repo DotNetDevMCP / workflow release.yml, and repo secret NUGET_USER (nuget.org profile name).
 
 on:
   push:
@@ -9,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write  # OIDC token for NuGet/login
 
 jobs:
   release:
@@ -34,8 +36,15 @@ jobs:
       - name: Pack
         run: dotnet pack src/DotNetDevMCP.Server/DotNetDevMCP.Server.csproj --configuration Release --no-build --output artifacts -p:Version=${{ steps.v.outputs.version }}
 
+      # Right before push: the temporary key lives 1 hour.
+      - name: NuGet login (OIDC -> temp API key)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
       - name: Push to NuGet.org
-        run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+        run: dotnet nuget push "artifacts/*.nupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
 
       - name: GitHub release
         uses: softprops/action-gh-release@v2
