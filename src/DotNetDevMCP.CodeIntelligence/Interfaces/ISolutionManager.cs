@@ -5,7 +5,9 @@ public interface ISolutionManager : IDisposable {
     bool IsSolutionLoaded { get; }
     MSBuildWorkspace? CurrentWorkspace { get; }
     Solution? CurrentSolution { get; }
-    
+
+    /// <summary>True once the background compilation warm-up started by LoadSolutionAsync has finished. Never awaited by other tools.</summary>
+    bool IsWarm { get; }
 
     Task LoadSolutionAsync(string solutionPath, CancellationToken cancellationToken);
     void UnloadSolution();

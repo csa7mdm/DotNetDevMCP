@@ -412,6 +412,22 @@ public static partial class AnalysisTools {
         }
         return index < line.Length ? line.Substring(index) : string.Empty;
     }
+    /// <summary>Shortens a path for an LLM-facing result: relative to the solution directory when it's under it, absolute otherwise.</summary>
+    private static string ToRelativePath(string? filePath, string? solutionDirectory) {
+        if (string.IsNullOrEmpty(filePath)) {
+            return filePath ?? string.Empty;
+        }
+        if (string.IsNullOrEmpty(solutionDirectory)) {
+            return filePath;
+        }
+        try {
+            var relative = Path.GetRelativePath(solutionDirectory, filePath);
+            return relative.StartsWith("..", StringComparison.Ordinal) ? filePath : relative;
+        } catch (ArgumentException) {
+            // e.g. paths on different drives on Windows - GetRelativePath can't express that as a relative path.
+            return filePath;
+        }
+    }
     [McpServerTool(Name = ToolHelpers.SharpToolPrefix + nameof(ListImplementations), Idempotent = true, ReadOnly = true, Destructive = false, OpenWorld = false)]
     [Description("Gets the locations and FQNs of all implementations of an interface or abstract method, and lists derived classes for a base class. Crucial for navigating polymorphic code and understanding implementation patterns.")]
     public static async Task<object> ListImplementations(
@@ -705,6 +721,7 @@ public static partial class AnalysisTools {
 
             var symbol = await ToolHelpers.GetRoslynSymbolOrThrowAsync(solutionManager, fullyQualifiedSymbolName, cancellationToken);
             var referencedSymbols = await codeAnalysisService.FindReferencesAsync(symbol, cancellationToken);
+            var solutionDirectory = Path.GetDirectoryName(solutionManager.CurrentSolution?.FilePath);
 
             var references = new List<object>();
             var maxToShow = 20;
@@ -733,15 +750,11 @@ public static partial class AnalysisTools {
                             var sourceText = await sourceTree.GetTextAsync(cancellationToken);
                             var lineSpan = location.Location.GetLineSpan();
 
-                            var contextLines = new List<string>();
-                            const int linesAround = 2;
-                            for (int i = Math.Max(0, lineSpan.StartLinePosition.Line - linesAround);
-                                 i <= Math.Min(sourceText.Lines.Count - 1, lineSpan.EndLinePosition.Line + linesAround);
-                                 i++) {
-                                contextLines.Add(TrimLeadingWhitespace(sourceText.Lines[i].ToString()));
-                            }
+                            // One line of context (the reference's own line) is enough for an LLM to place it; the
+                            // surrounding 4 lines this used to include cost far more bytes than they were worth.
+                            var context = TrimLeadingWhitespace(sourceText.Lines[lineSpan.StartLinePosition.Line].ToString());
 
-                            string parentMember = "N/A";
+                            string? parentMember = null;
                             try {
                                 var syntaxRoot = await sourceTree.GetRootAsync(cancellationToken);
                                 var token = syntaxRoot.FindToken(location.Location.SourceSpan.Start);
@@ -756,8 +769,8 @@ public static partial class AnalysisTools {
                                         var semanticModel = await solutionManager.GetSemanticModelAsync(location.Document.Id, cancellationToken);
                                         var parentSymbol = semanticModel?.GetDeclaredSymbol(memberDecl, cancellationToken);
                                         if (parentSymbol != null) {
-                                            parentMember = CodeAnalysisService.GetFormattedSignatureAsync(parentSymbol, false) +
-                                                $" //FQN: {FuzzyFqnLookupService.GetSearchableString(parentSymbol)}";
+                                            // FQN only, not the full signature: the caller already knows the symbol it searched for.
+                                            parentMember = FuzzyFqnLookupService.GetSearchableString(parentSymbol);
                                         }
                                     }
                                 }
@@ -766,13 +779,15 @@ public static partial class AnalysisTools {
                                     location.Document.FilePath ?? "unknown file");
                             }
 
+                            var startLine = lineSpan.StartLinePosition.Line + 1;
+                            var endLine = lineSpan.EndLinePosition.Line + 1;
                             references.Add(new {
                                 location = new {
-                                    filePath = location.Document.FilePath,
-                                    startLine = lineSpan.StartLinePosition.Line + 1,
-                                    endLine = lineSpan.EndLinePosition.Line + 1,
+                                    filePath = ToRelativePath(location.Document.FilePath, solutionDirectory),
+                                    startLine,
+                                    endLine = endLine == startLine ? (int?)null : endLine,
                                 },
-                                context = string.Join(Environment.NewLine, contextLines),
+                                context,
                                 parentMember
                             });
                             count++;

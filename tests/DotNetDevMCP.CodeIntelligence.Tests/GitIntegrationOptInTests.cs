@@ -117,6 +117,7 @@ public class GitIntegrationOptInTests {
         public bool IsSolutionLoaded => true;
         public Microsoft.CodeAnalysis.MSBuild.MSBuildWorkspace? CurrentWorkspace { get; } = CreateWorkspaceWithFakeSolution();
         public Solution? CurrentSolution => CurrentWorkspace!.CurrentSolution;
+        public bool IsWarm => false;
 
         private static Microsoft.CodeAnalysis.MSBuild.MSBuildWorkspace CreateWorkspaceWithFakeSolution() {
             var workspace = Microsoft.CodeAnalysis.MSBuild.MSBuildWorkspace.Create();
