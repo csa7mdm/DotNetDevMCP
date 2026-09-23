@@ -1,0 +1,186 @@
+{
+ "mutants": [
+  {
+   "file": "src/Polly/Wrap/IAsyncPolicyPolicyWrapExtensions.cs",
+   "line": 194,
+   "complete": true,
+   "signature": "public static AsyncPolicyWrap<TResult> WrapAsync<TResult>(params IAsyncPolicy<TResult>[] p",
+   "full_seconds": 46.9,
+   "full_failed": 10,
+   "selected": 301,
+   "caught": 10,
+   "missed": [],
+   "selection_seconds": 5.7,
+   "affected_run_seconds": 25.1,
+   "affected_run_failed": 10,
+   "affected_run_total": 1599
+  },
+  {
+   "file": "src/Polly.Core/Simmy/Fault/FaultGenerator.cs",
+   "line": 48,
+   "complete": true,
+   "signature": "public FaultGenerator AddException(Func<ResilienceContext, Exception> generator, int weigh",
+   "full_seconds": 44.9,
+   "full_failed": 1,
+   "selected": 5,
+   "caught": 1,
+   "missed": [],
+   "selection_seconds": 0.6,
+   "affected_run_seconds": 4.0,
+   "affected_run_failed": 1,
+   "affected_run_total": 5
+  },
+  {
+   "file": "src/Polly.Core/Registry/ResiliencePipelineRegistry.cs",
+   "line": 99,
+   "complete": false,
+   "signature": "public ResiliencePipeline GetOrAddPipeline(TKey key, Action<ResiliencePipelineBuilder> con",
+   "full_seconds": 46.5,
+   "full_failed": 10,
+   "selected": 0,
+   "caught": 0,
+   "missed": [
+    "Polly.Core.Tests.Issues.IssuesTests.CircuitBreakerStateRegistry_1828",
+    "Polly.Core.Tests.Registry.ResiliencePipelineRegistryTests.DisposePipeline_NotAllowed",
+    "Polly.Core.Tests.Registry.ResiliencePipelineRegistryTests.Dispose_EnsureDisposed",
+    "Polly.Core.Tests.Registry.ResiliencePipelineRegistryTests.Dispose_EnsureNotUsableAnymore",
+    "Polly.Core.Tests.Registry.ResiliencePipelineRegistryTests.GetOrAddPipeline_EnsureCorrectComponents",
+    "Polly.Core.Tests.Registry.ResiliencePipelineRegistryTests.GetOrAddPipeline_Ok",
+    "Polly.Extensions.Tests.DependencyInjection.PollyServiceCollectionExtensionTests.AddResiliencePipeline_CustomInstanceName_EnsureReported",
+    "Polly.Extensions.Tests.DisposablePipelineTests.DisposePipeline_EnsureExternalPipelineNotDisposed",
+    "Polly.RateLimiting.Tests.RateLimiterResiliencePipelineBuilderExtensionsTests.DisposeRegistry_EnsureRateLimiterDisposed",
+    "Polly.RateLimiting.Tests.RateLimiterResiliencePipelineBuilderExtensionsTests.RegistryDispose_DoesNotDisposeExternalLimiter"
+   ],
+   "selection_seconds": 10.1
+  },
+  {
+   "file": "src/Polly/CircuitBreaker/AsyncCircuitBreakerPolicy.cs",
+   "line": 42,
+   "complete": true,
+   "signature": "bool continueOnCapturedContext)",
+   "full_seconds": 53.3,
+   "full_failed": 27,
+   "selected": 336,
+   "caught": 21,
+   "missed": [
+    "Polly.Specs.CircuitBreaker.AdvancedCircuitBreakerAsyncSpecs.Should_execute_action_when_non_faulting_and_cancellationToken_not_cancelled",
+    "Polly.Specs.CircuitBreaker.AdvancedCircuitBreakerAsyncSpecs.Should_execute_func_returning_value_when_cancellationToken_not_cancelled",
+    "Polly.Specs.CircuitBreaker.CircuitBreakerAsyncSpecs.Should_execute_action_when_non_faulting_and_cancellationToken_not_cancelled",
+    "Polly.Specs.CircuitBreaker.CircuitBreakerAsyncSpecs.Should_execute_func_returning_value_when_cancellationToken_not_cancelled",
+    "Polly.Specs.Wrap.PolicyWrapContextAndKeyAsyncSpecs.Should_pass_PolicyKey_to_execution_context_of_inner_policy_as_PolicyWrapKey",
+    "Polly.Specs.Wrap.PolicyWrapContextAndKeyAsyncSpecs.Should_pass_PolicyKey_to_execution_context_of_outer_policy_as_PolicyWrapKey"
+   ],
+   "selection_seconds": 2.5,
+   "affected_run_seconds": 17.4,
+   "affected_run_failed": 119,
+   "affected_run_total": 548
+  },
+  {
+   "file": "src/Polly.Core/CircuitBreaker/Controller/CircuitStateController.cs",
+   "line": 89,
+   "complete": false,
+   "signature": "public Task IsolateCircuitAsync(ResilienceContext context)",
+   "full_seconds": 44.3,
+   "full_failed": 7,
+   "selected": 419,
+   "caught": 5,
+   "missed": [
+    "Polly.Core.Tests.CircuitBreaker.CircuitBreakerResiliencePipelineBuilderTests.AddCircuitBreakers_WithIsolatedManualControl_ShouldBeIsolated",
+    "Polly.Core.Tests.CircuitBreaker.CircuitBreakerResilienceStrategyTests.Ctor_ManualControl_EnsureAttached"
+   ],
+   "selection_seconds": 10.0
+  },
+  {
+   "file": "src/Snippets/Docs/Extensibility.cs",
+   "line": 8,
+   "complete": true,
+   "signature": "public static void DelegateUsage()",
+   "full_seconds": 43.7,
+   "full_failed": 0,
+   "selected": 0,
+   "caught": 0,
+   "missed": [],
+   "selection_seconds": 0.0
+  },
+  {
+   "file": "src/Polly/Caching/CachePolicy.cs",
+   "line": 28,
+   "complete": true,
+   "signature": "Action<Context, string, Exception>? onCachePutError)",
+   "full_seconds": 42.2,
+   "full_failed": 28,
+   "selected": 250,
+   "caught": 27,
+   "missed": [
+    "Polly.Specs.Caching.CacheSpecs.Should_throw_when_action_is_null"
+   ],
+   "selection_seconds": 0.6,
+   "affected_run_seconds": 16.8,
+   "affected_run_failed": 28,
+   "affected_run_total": 713
+  },
+  {
+   "file": "src/Polly.Core/ResiliencePipeline.SyncT.cs",
+   "line": 139,
+   "complete": true,
+   "signature": "CancellationToken cancellationToken = default)",
+   "full_seconds": 41.0,
+   "full_failed": 3,
+   "selected": 169,
+   "caught": 3,
+   "missed": [],
+   "selection_seconds": 0.4,
+   "affected_run_seconds": 8.9,
+   "affected_run_failed": 3,
+   "affected_run_total": 217
+  },
+  {
+   "file": "src/Polly.Core/Utils/Pipeline/CompositeComponent.cs",
+   "line": 34,
+   "complete": false,
+   "signature": "TimeProvider timeProvider)",
+   "full_seconds": 40.7,
+   "full_failed": 249,
+   "selected": 467,
+   "caught": 110,
+   "missed": [
+    "Polly.Core.Tests.CircuitBreaker.CircuitBreakerResiliencePipelineBuilderTests.AddCircuitBreaker_Configure",
+    "Polly.Core.Tests.CircuitBreaker.CircuitBreakerResiliencePipelineBuilderTests.AddCircuitBreaker_Generic_Configure",
+    "Polly.Core.Tests.CircuitBreaker.CircuitBreakerResiliencePipelineBuilderTests.AddCircuitBreaker_IntegrationTest",
+    "Polly.Core.Tests.CircuitBreaker.CircuitBreakerResiliencePipelineBuilderTests.AddCircuitBreaker_IntegrationTest_WithBreakDurationGenerator",
+    "Polly.Core.Tests.CircuitBreaker.CircuitBreakerResiliencePipelineBuilderTests.AddCircuitBreakers_WithIsolatedManualControl_ShouldBeIsolated",
+    "Polly.Core.Tests.CircuitBreaker.CircuitBreakerResilienceStrategyTests.Ctor_ManualControl_EnsureAttached",
+    "Polly.Core.Tests.CircuitBreaker.CircuitBreakerResilienceStrategyTests.Ctor_Ok",
+    "Polly.Core.Tests.CircuitBreaker.CircuitBreakerResilienceStrategyTests.Ctor_StateProvider_EnsureAttached",
+    "Polly.Core.Tests.CircuitBreaker.CircuitBreakerResilienceStrategyTests.ExecuteOutcomeAsync_UnhandledException_OnActionSuccess",
+    "Polly.Core.Tests.CircuitBreaker.CircuitBreakerResilienceStrategyTests.Execute_HandledException_OnFailureCalled"
+   ],
+   "selection_seconds": 10.5
+  },
+  {
+   "file": "src/Polly.Testing/ResiliencePipelineExtensions.cs",
+   "line": 55,
+   "complete": true,
+   "signature": "private static object GetStrategyInstance<T>(PipelineComponent component)",
+   "full_seconds": 40.4,
+   "full_failed": 43,
+   "selected": 40,
+   "caught": 39,
+   "missed": [
+    "Polly.Core.Tests.Retry.RetryResiliencePipelineBuilderExtensionsTests.AddRetry_GenericOverloads_Ok",
+    "Polly.Core.Tests.Retry.RetryResiliencePipelineBuilderExtensionsTests.AddRetry_Overloads_Ok",
+    "Polly.Core.Tests.Simmy.Fault.ChaosFaultPipelineBuilderExtensionsTests.AddFault_Options_Ok",
+    "Polly.Core.Tests.Simmy.Outcomes.ChaosOutcomePipelineBuilderExtensionsTests.AddResult_Options_Ok"
+   ],
+   "selection_seconds": 0.0,
+   "affected_run_seconds": 5.0,
+   "affected_run_failed": 44,
+   "affected_run_total": 45
+  }
+ ],
+ "hangs": [
+  "src/Polly.Core/Hedging/Controller/TaskExecution.cs:172",
+  "src/Polly.Core/Utils/ObjectPool.cs:43"
+ ],
+ "no_build": []
+}

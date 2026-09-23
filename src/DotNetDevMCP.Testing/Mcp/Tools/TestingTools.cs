@@ -41,9 +41,10 @@ public static class TestingTools
         [Description("VSTest filter expression, e.g. FullyQualifiedName~OrderService|Category=Unit")] string? filter = null,
         [Description("Exact fully qualified test names to run (Namespace.Class.Method). Combined with filter if both given.")] string[]? testNames = null,
         [Description("Skip the build. Only when nothing changed since the last build.")] bool noBuild = false,
+        [Description("Run one target framework only, e.g. net10.0. Default: every framework the projects target.")] string? framework = null,
         CancellationToken cancellationToken = default)
     {
-        var summary = await runner.RunAsync(path, filter, testNames, noBuild, cancellationToken);
+        var summary = await runner.RunAsync(path, filter, testNames, noBuild, framework, cancellationToken);
         logger.LogInformation("dotnet_test_run {Path}: {Passed}/{Total} passed in {Sec:F1}s", path, summary.PassedTests, summary.TotalTests, summary.Duration.TotalSeconds);
         return Shape(summary);
     }
@@ -57,8 +58,11 @@ public static class TestingTools
         ILogger<TestingToolsLogCategory> logger,
         [Description("Changed source files. Omit to use git: uncommitted changes, or the diff against gitBase if given.")] string[]? changedFiles = null,
         [Description("Git ref to diff against instead of the working tree, e.g. main or HEAD~3")] string? gitBase = null,
-        [Description("How many reference hops to follow from a changed symbol (1 = tests that call it directly). Default 3.")] int maxDepth = 3,
+        [Description("How many reference hops to follow from a changed symbol (1 = tests that call it directly). Default 8.")] int maxDepth = 8,
         [Description("Only report which tests would run; do not run them.")] bool dryRun = false,
+        [Description("Skip building the affected test projects. Only when nothing changed since the last build.")] bool noBuild = false,
+        [Description("Seconds allowed for tracing. Past it the change reaches too much code for selection to beat running everything, so the whole solution runs instead. Default 10.")] int maxSelectionSeconds = 10,
+        [Description("Run one target framework only, e.g. net10.0: much faster for multi-targeted test projects. Default: every framework.")] string? framework = null,
         CancellationToken cancellationToken = default)
     {
         if (!solutions.IsSolutionLoaded)
@@ -77,22 +81,55 @@ public static class TestingTools
         }
 
         sw.Restart();
-        var affected = await finder.FindAsync(files, maxDepth, cancellationToken);
-        logger.LogInformation("dotnet_test_affected: {Files} changed files -> {Tests} tests in {Ms} ms", files.Length, affected.Count, sw.ElapsedMilliseconds);
+        var selection = await finder.FindAsync(files, maxDepth, TimeSpan.FromSeconds(maxSelectionSeconds), cancellationToken);
+        var affected = selection.Tests;
+        logger.LogInformation("dotnet_test_affected: {Files} changed files -> {Tests} tests, {Symbols} symbols searched, complete={Complete}, {Ms} ms",
+            files.Length, affected.Count, selection.SymbolsSearched, selection.Complete, sw.ElapsedMilliseconds);
 
         var list = affected.Select(a => new { a.FullyQualifiedName, Project = Path.GetFileNameWithoutExtension(a.ProjectPath), a.Via });
-        if (dryRun || affected.Count == 0)
+        var note = selection.Complete ? null
+            : $"Selection stopped after {maxSelectionSeconds}s and {selection.SymbolsSearched} symbols: this change reaches too much code to trace cheaply. The tests listed are a partial set; a run executes the whole solution instead.";
+        if (dryRun || (selection.Complete && affected.Count == 0))
         {
-            return new { Success = true, ChangedFiles = files, AffectedTests = list, Ran = false };
+            return new { Success = true, ChangedFiles = files, SelectionComplete = selection.Complete, selection.SymbolsSearched, Note = note, AffectedTests = list, Ran = false };
         }
 
-        // One dotnet test per affected project, in parallel.
-        var runs = await Task.WhenAll(affected
-            .GroupBy(a => a.ProjectPath)
-            .Select(g => runner.RunAsync(g.Key, null, g.Select(a => a.FullyQualifiedName).ToList(), noBuild: false, cancellationToken)));
-        var summary = TestRunSummary.Merge(runs);
+        TestRunSummary summary;
+        if (!selection.Complete)
+        {
+            // Incomplete selection: the only safe answer is everything. One solution-wide run, which builds it once.
+            summary = await runner.RunAsync(solutions.CurrentSolution.FilePath!, null, null, noBuild, framework, cancellationToken);
+        }
+        else
+        {
+            var byProject = affected.GroupBy(a => a.ProjectPath).ToList();
 
-        return new { Success = summary.Success, ChangedFiles = files, AffectedTests = list, Ran = true, Run = Shape(summary) };
+            // Build one project at a time: test projects share references, and parallel builds of the same outputs collide on file locks.
+            if (!noBuild)
+            {
+                foreach (var project in byProject.Select(g => g.Key))
+                {
+                    var tfm = string.IsNullOrWhiteSpace(framework) ? "" : $" --framework {framework}";
+                    var (exit, stdout, stderr) = await TestRunner.RunDotnetAsync($"build \"{project}\" -nologo{tfm}", cancellationToken, TestRunner.DirectoryOf(project));
+                    if (exit != 0)
+                    {
+                        return new { Success = false, ChangedFiles = files, AffectedTests = list, Ran = false, Error = $"Build failed for {Path.GetFileName(project)}:\n{BuildErrors(stdout + stderr)}" };
+                    }
+                }
+            }
+
+            // Then one dotnet test per affected project, in parallel.
+            var runs = await Task.WhenAll(byProject.Select(g => runner.RunAsync(g.Key, null, g.Select(a => a.FullyQualifiedName).ToList(), noBuild: true, framework, cancellationToken)));
+            summary = TestRunSummary.Merge(runs);
+        }
+
+        return new { Success = summary.Success, ChangedFiles = files, SelectionComplete = selection.Complete, selection.SymbolsSearched, Note = note, AffectedTests = list, Ran = true, Run = Shape(summary) };
+    }
+
+    private static string BuildErrors(string output)
+    {
+        var errors = output.Split('\n').Select(l => l.Trim()).Where(l => l.Contains(": error ")).Distinct().Take(20).ToList();
+        return errors.Count > 0 ? string.Join("\n", errors) : string.Join("\n", output.Split('\n').Where(l => l.Trim().Length > 0).TakeLast(20));
     }
 
     private static object Shape(TestRunSummary s) => new

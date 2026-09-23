@@ -115,7 +115,9 @@ Measured with BenchmarkDotNet on an i7-10750H, .NET 10.0.9. The orchestration be
 
 ## Affected tests
 
-After an edit, the agent usually reruns the whole suite. `dotnet_test_affected` asks Roslyn instead: take the symbols declared in the changed files, follow references (up to `maxDepth` hops, default 3) until you land in a method with `[Fact]`, `[Theory]`, `[Test]`, `[TestCase]` or `[TestMethod]`, then run exactly those with `dotnet test --filter`. Changed files default to the git working tree, or `gitBase: "main"` for a branch. `dryRun: true` lists the tests without running them.
+After an edit, the agent usually reruns the whole suite. `dotnet_test_affected` asks Roslyn instead: take the symbols declared in the changed files, follow references (up to `maxDepth` hops, default 8) until you land in a method with `[Fact]`, `[Theory]`, `[Test]`, `[TestCase]` or `[TestMethod]`, then run exactly those. Changed files default to the git working tree, or `gitBase: "main"` for a branch. `dryRun: true` lists the tests without running them; `framework: "net10.0"` runs one target framework of multi-targeted test projects.
+
+The walk has a time budget (`maxSelectionSeconds`, default 10). A change to code that everything depends on reaches too much to trace cheaply; then the whole solution runs instead and the response says so (`selectionComplete: false`). You never get a silently partial selection. Works with VSTest and with Microsoft.Testing.Platform (`"test": { "runner": "Microsoft.Testing.Platform" }` in global.json).
 
 On this repository, editing `ConcurrentExecutor.cs` selects 22 of 44 tests (the `ConcurrentExecutorTests` plus the `OrchestrationServiceTests` that reach it through `OrchestrationService`). Measured through the MCP tool, build included, i7-10750H:
 
@@ -125,7 +127,7 @@ On this repository, editing `ConcurrentExecutor.cs` selects 22 of 44 tests (the 
 | `dotnet_test_run` | 44 | 8.3 s |
 | `dotnet_test_affected` (change to `ConcurrentExecutor.cs`) | 22 | 6.6 s |
 
-The suite here is small, so the saving is small; the selection scales with the ratio of touched code to suite size, not with machine cores. Selection itself (the Roslyn reference walk) takes 4-6 s on this solution; `dryRun: true` shows what it picked and why (`via`). Reproduce the engine benchmarks with `dotnet run -c Release --project benchmarks/DotNetDevMCP.Benchmarks`.
+The suite here is small, so the saving is small. On a real library the picture is clearer: [benchmarks/polly](benchmarks/polly/README.md) replays 40 Polly commits and injects faults into its code. A one-file change ran its 5 affected tests in 4.6 s against 33 s for the net10.0 suite, and the selections included 111 of the 112 tests the injected faults broke (the miss builds its object through reflection). Changes that reach hundreds of tests gain nothing, and 18 of 40 commits fell back to the full suite. `dryRun: true` shows what it picked and why (`via`).
 
 ## Build from source
 
@@ -152,8 +154,8 @@ src/
   DotNetDevMCP.Orchestration/    ConcurrentExecutor, WorkflowEngine, ResourceManager, orchestration tools
   DotNetDevMCP.Monitoring/       process metrics
   DotNetDevMCP.Core/             interfaces and models shared by the above
-tests/                           xUnit tests for the orchestration core and the TRX parser
-benchmarks/                      BenchmarkDotNet suite
+tests/                           xUnit tests
+benchmarks/                      BenchmarkDotNet suite; polly/ measures the tools on Polly
 docs/architecture/               design notes and ADRs
 ```
 
@@ -161,9 +163,9 @@ Built on the official [MCP C# SDK](https://github.com/modelcontextprotocol/cshar
 
 ## Status
 
-0.1.0. The Roslyn tools are mature (they come from SharpTools). Testing, build, git and orchestration are newer and have been exercised on this repository and a few others; expect rough edges on unusual project layouts. Issues and PRs welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
+0.3.0. The Roslyn tools are mature (they come from SharpTools). Testing, build, git and orchestration are newer and have been exercised on this repository and a few others; expect rough edges on unusual project layouts. Issues and PRs welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Known gaps: `dotnet_test_affected` follows C# references only (no reflection, no DI-by-convention, no string-keyed lookups), so a change reached only through those paths will not select the test; use `maxDepth` and `dryRun` to check what it picks. Test attribute detection covers xUnit, NUnit and MSTest by attribute name. Passing more than a few hundred exact test names to `dotnet test --filter` will exceed the command-line limit; run the project instead.
+Known gaps: `dotnet_test_affected` follows C# references only (no reflection, no DI-by-convention, no string-keyed lookups), so a change reached only through those paths will not select the test; use `dryRun` to check what it picks. Tests that hang instead of failing are only caught by a run that finishes. Test attribute detection covers xUnit, NUnit and MSTest by attribute name. Past the command-line length limit the filter widens from methods to classes, then to the whole project (more tests, never fewer).
 
 ## Credits and license
 
