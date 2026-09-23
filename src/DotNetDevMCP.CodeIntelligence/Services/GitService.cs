@@ -8,6 +8,8 @@ public class GitService : IGitService {
     private const string SharpToolsBranchPrefix = "sharptools/";
     private const string SharpToolsUndoBranchPrefix = "sharptools/undo/";
 
+    public bool IsEnabled => true;
+
     public GitService(ILogger<GitService> logger) {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }

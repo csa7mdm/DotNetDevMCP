@@ -8,6 +8,8 @@ namespace DotNetDevMCP.CodeIntelligence.Services;
 
 public class NoOpGitService : IGitService
 {
+    public bool IsEnabled => false;
+
     public Task<bool> IsRepositoryAsync(string solutionPath, CancellationToken cancellationToken = default)
     {
         return Task.FromResult(false);

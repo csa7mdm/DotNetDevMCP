@@ -22,6 +22,13 @@ public record CodeReviewResult(
 );
 
 public interface IGitService {
+    /// <summary>
+    /// True when this service actually performs git branch/commit operations (i.e. the server was
+    /// started with --git-commit-edits). False for the no-op implementation used by default, which
+    /// lets callers distinguish "git integration is disabled" from "this isn't a git repository".
+    /// </summary>
+    bool IsEnabled { get; }
+
     Task<bool> IsRepositoryAsync(string solutionPath, CancellationToken cancellationToken = default);
     Task<bool> IsOnSharpToolsBranchAsync(string solutionPath, CancellationToken cancellationToken = default);
     Task EnsureSharpToolsBranchAsync(string solutionPath, CancellationToken cancellationToken = default);

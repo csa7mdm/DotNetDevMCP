@@ -541,6 +541,16 @@ public class CodeModificationService : ICodeModificationService {
 
         var solutionPath = currentSolution.FilePath;
 
+        // Undo works by resetting the git commit that an edit tool made, so it fundamentally depends
+        // on git integration being enabled. Check that first (rather than falling through to
+        // IsRepositoryAsync, which the no-op service always reports false) so the message tells the
+        // user exactly how to fix it instead of implying their repo is somehow broken.
+        if (!_gitService.IsEnabled) {
+            _logger.LogError("Cannot undo changes: git integration is disabled.");
+            var disabledMessage = "Error: SharpTool_Undo requires git integration, which is off by default. Restart the server with --git-commit-edits to let edit tools create git commits that Undo can revert.";
+            return (false, disabledMessage);
+        }
+
         // Check if solution is in a git repository
         if (!await _gitService.IsRepositoryAsync(solutionPath, cancellationToken)) {
             _logger.LogError("Cannot undo changes: Solution is not in a Git repository.");
