@@ -1,287 +1,122 @@
-using Microsoft.Extensions.Logging;
-using ModelContextProtocol.Server;
-using System.ComponentModel;
 // Copyright (c) 2025 Ahmed Mustafa
 
-using ModelContextProtocol;
+using System.ComponentModel;
+using DotNetDevMCP.CodeIntelligence.Interfaces;
 using DotNetDevMCP.Core.Models;
-using DotNetDevMCP.Testing;
-using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Server;
 
 namespace DotNetDevMCP.Testing.Mcp.Tools;
 
-/// <summary>
-/// Marker class for ILogger category specific to TestingTools
-/// </summary>
-public class TestingToolsLogCategory { }
+public sealed class TestingToolsLogCategory { }
 
-/// <summary>
-/// MCP Tools for test discovery and execution
-/// </summary>
 [McpServerToolType]
-public static partial class TestingTools
+public static class TestingTools
 {
     [McpServerTool(Name = "dotnet_test_discover", Idempotent = true, ReadOnly = true, Destructive = false, OpenWorld = false)]
-    [Description("Discovers tests in a .NET assembly or project. Returns a list of all discovered test cases with their metadata.")]
-    public static async Task<object> DiscoverTests(
-        TestingService testingService,
-        ILogger<TestingToolsLogCategory> logger,
-        [Description("Path to the test assembly or project file")] string assemblyPath,
-        [Description("Optional filter by test name")] string? nameFilter = null,
-        [Description("Optional filter by category")] string? categoryFilter = null,
+    [Description("Lists the tests in a test project (dotnet test --list-tests). Builds the project first unless it is already built.")]
+    public static async Task<object> Discover(
+        TestRunner runner,
+        [Description("Path to the test project (.csproj)")] string projectPath,
+        [Description("VSTest filter, e.g. FullyQualifiedName~OrderService or Category=Unit")] string? filter = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            logger.LogInformation("Discovering tests in: {AssemblyPath}", assemblyPath);
-            
-            var options = new TestDiscoveryOptions(
-                NameFilter: nameFilter,
-                CategoryFilter: categoryFilter);
-            
-            var testCases = await testingService.DiscoverTestsAsync(assemblyPath, options, cancellationToken);
-            var testList = testCases.ToList();
-            
-            logger.LogInformation("Discovered {Count} tests", testList.Count);
-            
-            return new
-            {
-                Success = true,
-                TotalTests = testList.Count,
-                Tests = testList.Select(t => new
-                {
-                    t.FullyQualifiedName,
-                    t.DisplayName,
-                    t.Framework,
-                    t.AssemblyPath,
-                    t.Category,
-                    t.IsSkipped,
-                    t.SkipReason,
-                    ExpectedDuration = t.ExpectedDuration?.TotalSeconds,
-                    t.Traits
-                })
-            };
+            var tests = await runner.DiscoverAsync(projectPath, filter, cancellationToken);
+            return new { Success = true, TotalTests = tests.Count, Tests = tests.Select(t => t.FullyQualifiedName) };
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to discover tests in {AssemblyPath}", assemblyPath);
-            return new { Success = false, Error = ex.Message, TotalTests = 0, Tests = Array.Empty<object>() };
+            return new { Success = false, Error = ex.Message };
         }
     }
 
-    [McpServerTool(Name = "dotnet_test_run", Idempotent = false, ReadOnly = true, Destructive = false, OpenWorld = false)]
-    [Description("Executes tests with configurable parallelism strategy. Supports sequential, full parallel, assembly-level parallel, and smart parallel execution.")]
-    public static async Task<object> RunTests(
-        TestingService testingService,
+    [McpServerTool(Name = "dotnet_test_run", Idempotent = false, ReadOnly = false, Destructive = false, OpenWorld = false)]
+    [Description("Runs tests in a project or a whole solution with one dotnet test invocation and returns per-test results, failures with messages and stack traces. Use filter or testNames to narrow.")]
+    public static async Task<object> Run(
+        TestRunner runner,
         ILogger<TestingToolsLogCategory> logger,
-        [Description("Path to the test assembly or project file")] string assemblyPath,
-        [Description("Test fully qualified names to run. Empty runs all discovered tests.")] string[]? testNames = null,
-        [Description("Execution strategy: Sequential, FullParallel, AssemblyLevelParallel, SmartParallel")] string strategy = "SmartParallel",
-        [Description("Maximum number of parallel tests (default: processor count)")] int? maxParallelTests = null,
-        [Description("Test timeout in seconds (default: 60)")] int? timeoutSeconds = null,
-        [Description("Continue executing tests after a failure")] bool continueOnFailure = true,
+        [Description("Path to a test project (.csproj) or a solution (.sln)")] string path,
+        [Description("VSTest filter expression, e.g. FullyQualifiedName~OrderService|Category=Unit")] string? filter = null,
+        [Description("Exact fully qualified test names to run (Namespace.Class.Method). Combined with filter if both given.")] string[]? testNames = null,
+        [Description("Skip the build. Only when nothing changed since the last build.")] bool noBuild = false,
         CancellationToken cancellationToken = default)
     {
-        try
-        {
-            logger.LogInformation("Running tests with strategy: {Strategy}", strategy);
-            
-            // Parse strategy
-            var executionStrategy = strategy.ToLower() switch
-            {
-                "sequential" => TestExecutionStrategy.Sequential,
-                "fullparallel" => TestExecutionStrategy.FullParallel,
-                "assemblylevelparallel" => TestExecutionStrategy.AssemblyLevelParallel,
-                _ => TestExecutionStrategy.SmartParallel
-            };
-            
-            // Discover tests if no specific names provided
-            IEnumerable<TestCase> testCases;
-            if (testNames is null || testNames.Length == 0)
-            {
-                var allTests = await testingService.DiscoverTestsAsync(assemblyPath, cancellationToken: cancellationToken);
-                testCases = allTests;
-            }
-            else
-            {
-                var allTests = await testingService.DiscoverTestsAsync(assemblyPath, cancellationToken: cancellationToken);
-                testCases = allTests.Where(t => testNames.Contains(t.FullyQualifiedName));
-            }
-            
-            var options = new TestExecutionOptions(
-                Strategy: executionStrategy,
-                MaxParallelTests: maxParallelTests,
-                DefaultTestTimeout: timeoutSeconds.HasValue ? TimeSpan.FromSeconds(timeoutSeconds.Value) : null,
-                ContinueOnFailure: continueOnFailure);
-            
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            var summary = await testingService.RunTestsAsync(testCases, options, cancellationToken: cancellationToken);
-            stopwatch.Stop();
-            
-            logger.LogInformation("Test run completed: {Passed}/{Total} passed in {Duration}s", 
-                summary.PassedTests, summary.TotalTests, summary.TotalDuration.TotalSeconds);
-            
-            return new
-            {
-                Success = true,
-                TotalTests = summary.TotalTests,
-                PassedTests = summary.PassedTests,
-                FailedTests = summary.FailedTests,
-                SkippedTests = summary.SkippedTests,
-                PassRate = Math.Round(summary.PassRate, 2),
-                DurationSeconds = Math.Round(summary.TotalDuration.TotalSeconds, 2),
-                Failures = summary.FailedResults.Select(f => new
-                {
-                    f.TestCase.FullyQualifiedName,
-                    f.TestCase.DisplayName,
-                    f.ErrorMessage,
-                    f.StackTrace,
-                    DurationSeconds = f.Duration.TotalSeconds
-                })
-            };
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to run tests");
-            return new 
-            { 
-                Success = false, 
-                Error = ex.Message,
-                TotalTests = 0,
-                PassedTests = 0,
-                FailedTests = 0,
-                SkippedTests = 0
-            };
-        }
+        var summary = await runner.RunAsync(path, filter, testNames, noBuild, cancellationToken);
+        logger.LogInformation("dotnet_test_run {Path}: {Passed}/{Total} passed in {Sec:F1}s", path, summary.PassedTests, summary.TotalTests, summary.Duration.TotalSeconds);
+        return Shape(summary);
     }
 
-    [McpServerTool(Name = "dotnet_test_run_solution", Idempotent = false, ReadOnly = true, Destructive = false, OpenWorld = false)]
-    [Description("Runs tests across an entire solution with parallel execution support and optional code coverage collection.")]
-    public static async Task<object> RunSolutionTests(
-        TestingService testingService,
+    [McpServerTool(Name = "dotnet_test_affected", Idempotent = false, ReadOnly = false, Destructive = false, OpenWorld = false)]
+    [Description("Finds the tests that reference the code in the changed files (via Roslyn, through the loaded solution) and runs only those. Default changed files: the git working tree. Requires a loaded solution (SharpTool_LoadSolution or --load-solution).")]
+    public static async Task<object> RunAffected(
+        TestRunner runner,
+        AffectedTestFinder finder,
+        ISolutionManager solutions,
         ILogger<TestingToolsLogCategory> logger,
-        [Description("Path to the solution file (.sln)")] string solutionPath,
-        [Description("Run tests in parallel across projects")] bool runInParallel = true,
-        [Description("Maximum degree of parallelism")] int? maxDegreeOfParallelism = null,
-        [Description("Filter expression for test selection")] string? filter = null,
-        [Description("Collect code coverage data")] bool collectCoverage = false,
+        [Description("Changed source files. Omit to use git: uncommitted changes, or the diff against gitBase if given.")] string[]? changedFiles = null,
+        [Description("Git ref to diff against instead of the working tree, e.g. main or HEAD~3")] string? gitBase = null,
+        [Description("How many reference hops to follow from a changed symbol (1 = tests that call it directly). Default 3.")] int maxDepth = 3,
+        [Description("Only report which tests would run; do not run them.")] bool dryRun = false,
         CancellationToken cancellationToken = default)
     {
-        try
+        if (!solutions.IsSolutionLoaded)
         {
-            logger.LogInformation("Running solution-level tests for: {SolutionPath}", solutionPath);
-            
-            // Find all test projects in solution
-            var solutionDir = Path.GetDirectoryName(solutionPath) ?? Environment.CurrentDirectory;
-            var testProjects = Directory.GetFiles(solutionDir, "*.csproj", SearchOption.AllDirectories)
-                .Where(p => 
-                {
-                    var content = File.ReadAllText(p);
-                    return content.Contains("<IsTestProject>true</IsTestProject>") ||
-                           content.Contains("Microsoft.NET.Test.Sdk") ||
-                           content.Contains("xunit") ||
-                           content.Contains("NUnit") ||
-                           content.Contains("MSTest");
-                })
-                .ToList();
-            
-            logger.LogInformation("Found {Count} test projects", testProjects.Count);
-            
-            var allResults = new List<TestResult>();
-            var totalStopwatch = System.Diagnostics.Stopwatch.StartNew();
-            
-            if (runInParallel && testProjects.Count > 1)
-            {
-                // Run tests in parallel across projects
-                var projectTasks = testProjects.Select(async projectPath =>
-                {
-                    try
-                    {
-                        var tests = await testingService.DiscoverTestsAsync(projectPath, cancellationToken: cancellationToken);
-                        var options = new TestExecutionOptions(
-                            Strategy: TestExecutionStrategy.SmartParallel,
-                            MaxParallelTests: maxDegreeOfParallelism ?? Environment.ProcessorCount,
-                            ContinueOnFailure: true);
-                        
-                        return await testingService.RunTestsAsync(tests, options, cancellationToken: cancellationToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogError(ex, "Failed to run tests in project: {ProjectPath}", projectPath);
-                        return new TestRunSummary(0, 0, 0, 0, TimeSpan.Zero, Array.Empty<TestResult>());
-                    }
-                });
-                
-                var projectResults = await Task.WhenAll(projectTasks);
-                allResults.AddRange(projectResults.SelectMany(r => r.Results));
-            }
-            else
-            {
-                // Run tests sequentially across projects
-                foreach (var projectPath in testProjects)
-                {
-                    try
-                    {
-                        var tests = await testingService.DiscoverTestsAsync(projectPath, cancellationToken: cancellationToken);
-                        var options = new TestExecutionOptions(
-                            Strategy: TestExecutionStrategy.SmartParallel,
-                            ContinueOnFailure: true);
-                        
-                        var result = await testingService.RunTestsAsync(tests, options, cancellationToken: cancellationToken);
-                        allResults.AddRange(result.Results);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogError(ex, "Failed to run tests in project: {ProjectPath}", projectPath);
-                    }
-                }
-            }
-            
-            totalStopwatch.Stop();
-            
-            var summary = new TestRunSummary(
-                allResults.Count,
-                allResults.Count(r => r.IsPassed),
-                allResults.Count(r => r.IsFailed),
-                allResults.Count(r => r.IsSkipped),
-                totalStopwatch.Elapsed,
-                allResults);
-            
-            logger.LogInformation("Solution test run completed: {Passed}/{Total} passed", 
-                summary.PassedTests, summary.TotalTests);
-            
-            return new
-            {
-                Success = true,
-                TotalTests = summary.TotalTests,
-                PassedTests = summary.PassedTests,
-                FailedTests = summary.FailedTests,
-                SkippedTests = summary.SkippedTests,
-                PassRate = Math.Round(summary.PassRate, 2),
-                DurationSeconds = Math.Round(summary.TotalDuration.TotalSeconds, 2),
-                TestProjects = testProjects.Count,
-                CoverageCollected = collectCoverage,
-                Failures = summary.FailedResults.Take(10).Select(f => new
-                {
-                    f.TestCase.FullyQualifiedName,
-                    f.TestCase.DisplayName,
-                    f.ErrorMessage,
-                    ProjectPath = f.TestCase.AssemblyPath
-                })
-            };
+            return new { Success = false, Error = "No solution loaded. Call SharpTool_LoadSolution first or start the server with --load-solution." };
         }
-        catch (Exception ex)
+
+        var solutionDir = Path.GetDirectoryName(solutions.CurrentSolution.FilePath!)!;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var files = changedFiles is { Length: > 0 } ? changedFiles : await GitChangedFilesAsync(solutionDir, gitBase, cancellationToken);
+        logger.LogDebug("dotnet_test_affected: resolved {Count} changed files in {Ms} ms", files.Length, sw.ElapsedMilliseconds);
+        files = files.Where(f => f.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)).Select(f => Path.GetFullPath(Path.Combine(solutionDir, f))).ToArray();
+        if (files.Length == 0)
         {
-            logger.LogError(ex, "Failed to run solution tests");
-            return new 
-            { 
-                Success = false, 
-                Error = ex.Message,
-                TotalTests = 0,
-                PassedTests = 0,
-                FailedTests = 0,
-                SkippedTests = 0
-            };
+            return new { Success = true, ChangedFiles = Array.Empty<string>(), AffectedTests = Array.Empty<object>(), Message = "No changed .cs files." };
         }
+
+        sw.Restart();
+        var affected = await finder.FindAsync(files, maxDepth, cancellationToken);
+        logger.LogInformation("dotnet_test_affected: {Files} changed files -> {Tests} tests in {Ms} ms", files.Length, affected.Count, sw.ElapsedMilliseconds);
+
+        var list = affected.Select(a => new { a.FullyQualifiedName, Project = Path.GetFileNameWithoutExtension(a.ProjectPath), a.Via });
+        if (dryRun || affected.Count == 0)
+        {
+            return new { Success = true, ChangedFiles = files, AffectedTests = list, Ran = false };
+        }
+
+        // One dotnet test per affected project, in parallel.
+        var runs = await Task.WhenAll(affected
+            .GroupBy(a => a.ProjectPath)
+            .Select(g => runner.RunAsync(g.Key, null, g.Select(a => a.FullyQualifiedName).ToList(), noBuild: false, cancellationToken)));
+        var summary = TestRunSummary.Merge(runs);
+
+        return new { Success = summary.Success, ChangedFiles = files, AffectedTests = list, Ran = true, Run = Shape(summary) };
+    }
+
+    private static object Shape(TestRunSummary s) => new
+    {
+        s.Success,
+        s.Error,
+        s.TotalTests,
+        s.PassedTests,
+        s.FailedTests,
+        s.SkippedTests,
+        DurationSeconds = Math.Round(s.Duration.TotalSeconds, 1),
+        Failures = s.Failures.Select(f => new { f.FullyQualifiedName, f.ErrorMessage, f.StackTrace, f.Output }),
+    };
+
+    private static async Task<string[]> GitChangedFilesAsync(string repoDir, string? gitBase, CancellationToken ct)
+    {
+        var args = gitBase is null ? "status --porcelain --untracked-files=all" : $"diff --name-only {gitBase}";
+        var (exit, output, err) = await TestRunner.RunProcessAsync("git", args, ct, repoDir);
+        if (exit != 0) throw new InvalidOperationException($"git {args} failed: {err.Trim()}");
+        var (_, root, _) = await TestRunner.RunProcessAsync("git", "rev-parse --show-toplevel", ct, repoDir);
+        root = root.Trim().Length == 0 ? repoDir : root.Trim();
+        return output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => gitBase is null ? l[3..].Trim() : l.Trim())     // porcelain lines are "XY path"
+            .Select(rel => Path.Combine(root, rel))
+            .ToArray();
     }
 }
