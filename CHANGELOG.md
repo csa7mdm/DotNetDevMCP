@@ -3,6 +3,16 @@
 All notable changes to DotNetDevMCP are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Security
+- **`--http` DNS rebinding / cross-origin protection.** Per the MCP Streamable HTTP transport's security guidance, the server
+  now validates the `Origin` header on every request: a browser request whose Origin isn't a localhost origin (or a
+  configured `--allowed-origin`) gets a 403, as does any request whose `Host` header doesn't name this machine's loopback
+  interface (`localhost`, `127.0.0.1`, `[::1]`). Non-browser MCP clients, which don't send an `Origin` header, are
+  unaffected. New `--allowed-origin <origin>` option (repeatable) allows a trusted local dev server. `--http` still has no
+  authentication or TLS and still shouldn't be exposed beyond localhost.
+
 ## [0.3.3] - 2026-09-24
 
 Prompted by an external evaluation; each claim was checked against the code first.

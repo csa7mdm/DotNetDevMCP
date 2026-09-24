@@ -42,6 +42,7 @@ public static class Program
         var gitCommitEditsOption = new Option<bool>("--git-commit-edits") { Description = "Let edit tools (RenameSymbol, OverwriteMember, AddMember, MoveMember, FindAndReplace, CreateRoslynDocument, OverwriteRoslynDocument, ManageUsings, ManageAttributes) create a git branch and commit after each change, and enable SharpTool_Undo. Off by default: edits are still applied to disk and compile-checked, they just don't touch git or your current branch." };
         var disableGitOption = new Option<bool>("--disable-git") { Description = "Deprecated, no-op. Git integration in code-intelligence tools is off by default; use --git-commit-edits to opt in." };
         var cleanEnvOption = new Option<bool>("--clean-env") { Description = "Give every dotnet/git child process a minimal, allow-listed environment instead of inheriting this server's full one. Scrubs environment variables only; it is not a sandbox: child processes still run with your user's file-system and network access. Off by default." };
+        var allowedOriginOption = new Option<string[]>("--allowed-origin") { Description = "Extra Origin allowed for --http (repeatable), e.g. http://localhost:5173", DefaultValueFactory = _ => [] };
         var enableOption = new Option<string[]>("--enable")
         {
             Description = "Enable optional tool groups, off by default: 'git' (repo status/branch/stage/commit/push/pull/log/diff) and 'monitoring' (process performance/GC/health/profiling). Comma-separated and/or repeated, e.g. \"--enable git,monitoring\" or \"--enable git --enable monitoring\".",
@@ -52,7 +53,7 @@ public static class Program
 
         var root = new RootCommand("DotNetDevMCP - MCP server for .NET development: Roslyn code intelligence, build, affected-test selection, git, orchestration.")
         {
-            httpOption, portOption, logDirOption, logLevelOption, loadSolutionOption, buildConfigurationOption, gitCommitEditsOption, disableGitOption, enableOption, cleanEnvOption
+            httpOption, portOption, logDirOption, logLevelOption, loadSolutionOption, buildConfigurationOption, gitCommitEditsOption, disableGitOption, enableOption, cleanEnvOption, allowedOriginOption
         };
 
         var parsed = root.Parse(args);
@@ -75,6 +76,7 @@ public static class Program
         bool enableGit = enabledGroups.Contains("git");
         bool enableMonitoring = enabledGroups.Contains("monitoring");
         bool cleanEnv = parsed.GetValue(cleanEnvOption);
+        string[] allowedOrigins = parsed.GetValue(allowedOriginOption) ?? [];
 
         Log.Logger = BuildLogger(logLevel, logDir);
 
@@ -99,7 +101,7 @@ public static class Program
             Log.Information("Starting {App} v{Version} ({Transport})", ApplicationName, ApplicationVersion, http ? $"http://localhost:{port}" : "stdio");
 
             IHost host = http
-                ? BuildHttpHost(args, port, gitCommitEdits, buildConfiguration, enableGit, enableMonitoring)
+                ? BuildHttpHost(args, port, gitCommitEdits, buildConfiguration, enableGit, enableMonitoring, allowedOrigins)
                 : BuildStdioHost(args, gitCommitEdits, buildConfiguration, enableGit, enableMonitoring);
 
             if (!string.IsNullOrEmpty(solutionPath))
@@ -130,13 +132,16 @@ public static class Program
         return builder.Build();
     }
 
-    private static IHost BuildHttpHost(string[] args, int port, bool gitCommitEdits, string? buildConfiguration, bool enableGit, bool enableMonitoring)
+    private static IHost BuildHttpHost(string[] args, int port, bool gitCommitEdits, string? buildConfiguration, bool enableGit, bool enableMonitoring, IReadOnlyCollection<string> allowedOrigins)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args });
         builder.Host.UseSerilog();
         builder.WebHost.UseUrls($"http://localhost:{port}");
         AddServices(builder.Services, gitCommitEdits, buildConfiguration, enableGit, enableMonitoring).WithHttpTransport();
         var app = builder.Build();
+        // MCP Streamable HTTP transport security requirement: validate Origin (DNS rebinding defense)
+        // and localhost-only Host before any request reaches the MCP endpoint.
+        app.UseLocalOriginGuard(port, allowedOrigins);
         app.MapMcp();
         return app;
     }
