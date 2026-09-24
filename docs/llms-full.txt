@@ -1,0 +1,692 @@
+# DotNetDevMCP (https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/index.md)
+
+# DotNetDevMCP
+
+DotNetDevMCP is an [MCP](https://modelcontextprotocol.io) server that gives AI coding agents the compiler's view of your .NET
+solution. Instead of `grep` and guessing, your agent can find real references, rename a symbol across the solution with a
+compile check, build, and run only the tests your change can break.
+
+![How DotNetDevMCP works](../images/how-it-works.svg)
+
+## Start here
+
+| I want to... | Page |
+|---|---|
+| Install it in Claude Code, VS Code, Visual Studio, Cursor or Claude Desktop | [Installation](installation.md) |
+| See what a first session looks like, step by step | [Tutorial](tutorial.md) |
+| Know every tool and its parameters | [Tools Reference](tools-reference.md) |
+| Understand how affected tests are chosen, and when it runs everything | [Affected Tests](affected-tests.md) |
+| Change server options (`--load-solution`, `--enable`, HTTP mode...) | [Configuration](configuration.md) |
+| Fix something that isn't working | [Troubleshooting](troubleshooting.md) |
+| See real numbers on a real library | [Benchmarks](benchmarks.md) |
+| Know what it can do on my machine, and how to limit it | [Security](security.md) |
+| Understand the code before contributing | [Architecture](architecture.md) |
+| Help out | [Contributing](contributing.md) |
+
+## In one minute
+
+```bash
+claude mcp add dotnetdevmcp -- dotnet dnx DotNetDevMCP --yes
+```
+
+Then ask your agent: *"Load MySolution.sln and tell me where `OrderService.Submit` is used."*
+
+Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0). Package: [nuget.org/packages/DotNetDevMCP](https://www.nuget.org/packages/DotNetDevMCP).
+Also listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.csa7mdm/dotnetdevmcp`.
+
+## Something missing or wrong?
+
+This wiki is open to edits: fix it directly. For bugs, [open an issue](https://github.com/csa7mdm/DotNetDevMCP/issues/new/choose);
+for questions, use [Discussions](https://github.com/csa7mdm/DotNetDevMCP/discussions).
+
+# Installation (https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/installation.md)
+
+# Installation
+
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (`dotnet --version` shows 10.x). Your own
+solution can target older frameworks; the SDK only has to be able to build it.
+
+DotNetDevMCP runs through `dotnet dnx`, which downloads the package from NuGet on first use and runs it. Nothing to install
+by hand. The examples use `"command": "dotnet"` with `dnx` as the first argument: it works on every OS and in clients that
+start servers without a shell (a bare `dnx` command can fail there on Windows, where `dnx` is a `.cmd` script).
+
+## Claude Code
+
+```bash
+claude mcp add dotnetdevmcp -- dotnet dnx DotNetDevMCP --yes
+```
+
+Load a solution at startup, so the first question is fast:
+
+```bash
+claude mcp add dotnetdevmcp -- dotnet dnx DotNetDevMCP --yes -- --load-solution /path/to/MyApp.sln
+```
+
+## VS Code (GitHub Copilot)
+
+`.vscode/mcp.json` in your repository:
+
+```json
+{
+  "servers": {
+    "dotnetdevmcp": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": ["dnx", "DotNetDevMCP", "--yes"]
+    }
+  }
+}
+```
+
+The [NuGet page](https://www.nuget.org/packages/DotNetDevMCP) has an **MCP Server** tab with a ready-made version of this
+that asks for a solution path.
+
+## Visual Studio
+
+`.mcp.json` next to your solution (or `%USERPROFILE%\.mcp.json` for every solution), same content as VS Code above.
+
+## Cursor, Claude Desktop and other clients
+
+These use the `mcpServers` form. Cursor: `.cursor/mcp.json` or `~/.cursor/mcp.json`. Claude Desktop: Settings → Developer →
+Edit config.
+
+```json
+{
+  "mcpServers": {
+    "dotnetdevmcp": {
+      "command": "dotnet",
+      "args": ["dnx", "DotNetDevMCP", "--yes", "--", "--load-solution", "C:/src/MyApp/MyApp.sln"]
+    }
+  }
+}
+```
+
+Everything after `--` goes to DotNetDevMCP itself; see [Configuration](configuration.md).
+
+## Permanent install instead of dnx
+
+```bash
+dotnet tool install -g DotNetDevMCP
+```
+
+Then use `dotnetdevmcp` as the command, with no `dnx` arguments. Update with `dotnet tool update -g DotNetDevMCP`.
+
+## Pin a version
+
+`dnx DotNetDevMCP` uses the latest version. For a team setup, pin it: `DotNetDevMCP@0.3.1`.
+
+## Check it works
+
+Ask your agent: *"Which DotNetDevMCP tools do you have?"* It should list 37 tools, such as `SharpTool_LoadSolution`,
+`SharpTool_FindReferences` and `dotnet_test_affected`. If not, see [Troubleshooting](troubleshooting.md).
+
+Next: [Tutorial](tutorial.md).
+
+# Tutorial (https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/tutorial.md)
+
+# Tutorial: your first session
+
+This walks through one realistic session on your own solution: understand some code, change it safely, and check the
+change with the tests that matter. You type the prompts in *italics* to your agent; the agent picks the tools. Tool names
+are shown so you can recognize them in your client's tool-call view.
+
+Before you start: [Installation](installation.md) done, and you know the path of your `.sln` or `.slnx`.
+
+```mermaid
+flowchart LR
+    A[1. Load the solution] --> B[2. Find your way around]
+    B --> C[3. Find every use]
+    C --> D[4. Change it safely]
+    D --> E[5. Build]
+    E --> F[6. Run the affected tests]
+```
+<!-- mermaid: rendered on GitHub; see the SVG diagrams for the Pages version -->
+
+
+## 1. Load the solution
+
+*"Load C:/src/MyApp/MyApp.sln."*
+
+The agent calls `SharpTool_LoadSolution`. Roslyn opens every project, so this takes a few seconds on a small solution and
+30 seconds or so on a large multi-targeted one (Polly, 801 files: about 30 s). It happens once per session. To skip it,
+start the server with `--load-solution` (see [Installation](installation.md)).
+
+The answer lists your projects with their target frameworks, namespaces and references. That's the map the agent uses
+from here on.
+
+## 2. Find your way around
+
+*"What's in the Orders project? Show me the public API of OrderService."*
+
+- `SharpTool_LoadProject` returns every type and member signature of a project without the agent reading files.
+- `SharpTool_GetMembers` lists one type's members with their XML docs.
+- `SharpTool_ViewDefinition` shows a member's source plus which types it uses and which types use it.
+
+These answer in well under a second once the solution is loaded, and they use a fraction of the tokens that reading whole
+files would.
+
+## 3. Find every use
+
+*"Where is OrderService.Submit used?"*
+
+`SharpTool_FindReferences` asks the compiler, so it returns only real references to *that* `Submit`: not comments, not
+other classes' `Submit` methods, not strings. On Polly, "where is `ResilienceContext.CancellationToken` used" came back as
+137 references in 6.5 KB, where `grep -w CancellationToken` returns 1,354 lines (202 KB) because the name is everywhere.
+
+*"Who implements IPaymentGateway?"* uses `SharpTool_ListImplementations`.
+
+## 4. Change it safely
+
+*"Rename OrderService.Submit to SubmitAsync everywhere."*
+
+`SharpTool_RenameSymbol` renames the symbol and every reference across the solution, formats only the lines it changed,
+and returns compiler errors and warnings for the files it touched. The diff stays small: a rename of one method in this
+repository changes exactly the two lines that mention it.
+
+Edits don't touch git. Your branch and history are left alone. If you want each edit committed on a separate branch
+(and `SharpTool_Undo` to work), start the server with `--git-commit-edits`.
+
+## 5. Build
+
+*"Build the solution."*
+
+`dotnet_build` returns a short summary: success, error and warning counts, every error, and the first 20 distinct warnings
+with paths relative to your solution. Pass `verbose: true` if you ever need the raw MSBuild output.
+
+## 6. Run the tests your change can break
+
+*"Run the tests affected by my changes."*
+
+`dotnet_test_affected` takes your changed files from git, walks Roslyn references from what they declare to the test
+methods that reach them, and runs only those. Every test comes with a `via` chain explaining why it was picked, for
+example `OrderService.cs -> Submit -> CheckoutController`.
+
+![How affected tests are chosen](../images/affected-tests.svg)
+
+It runs the whole solution instead, and tells you why, when your change reaches too much of the code to trace in
+10 seconds or would select more than 20% of your tests. You never get a silently partial selection. On a multi-targeted
+solution add *"only for net10.0"*: the agent passes `framework: "net10.0"`, and a small change's tests run in seconds
+(Polly: 5 tests in 5.1 s against 48.1 s for the full suite).
+
+Want to see the choice before running anything? *"Which tests would my change affect? Don't run them."* (`dryRun: true`).
+
+More detail: [Affected Tests](affected-tests.md).
+
+## Prompts to try next
+
+- *"Find circular project references."* (`dotnet_detect_circular_dependencies`)
+- *"Which methods in the Orders project are the most complex?"* (`SharpTool_AnalyzeComplexity`)
+- *"Build Api and Worker in parallel, then run both test projects."* (`execute_workflow`)
+- *"Add a CancellationToken parameter to every public async method in OrderService."* (`SharpTool_OverwriteMember`)
+
+Something didn't work the way this page says? That's a bug in the tool or in this page: [tell us](https://github.com/csa7mdm/DotNetDevMCP/issues/new/choose).
+
+# Tools Reference (https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/tools-reference.md)
+
+# Tools reference
+
+Generated from the server's own `tools/list` (0.3.2). 37 tools are on by default; the git and monitoring groups are opt-in with `--enable git,monitoring` (53 tools).
+
+Your agent sees each tool's full description and parameters; this page is the quick map.
+
+## Code intelligence (Roslyn) (21)
+
+| Tool | What it does | Parameters |
+|---|---|---|
+| `SharpTool_AddMember` | Adds one or more new member definitions (Property, Field, Method, inner Class, etc.) to a specified type. | `fullyQualifiedTargetName`, `codeSnippet`, `fileNameHint`, `lineNumberHint`, `commitMessage` |
+| `SharpTool_AnalyzeComplexity` | Deep analysis of code complexity metrics including cyclomatic complexity, cognitive complexity, method stats, coupling, and inheritance depth. | `scope`, `target` |
+| `SharpTool_CreateRoslynDocument` | Creates a new document file with the specified content. | `filePath`, `content`, `commitMessage` |
+| `SharpTool_FindAndReplace` | Regex find-and-replace in a file, type or glob of files, with a compile check of the result. | `regexPattern`, `replacementText`, `target`, `commitMessage` |
+| `SharpTool_FindReferences` | Finds all references to a specified symbol with surrounding context. | `fullyQualifiedSymbolName` |
+| `SharpTool_GetMembers` | Lists the full signatures of members of a specified type, including XML documentation. | `fullyQualifiedTypeName`, `includePrivateMembers` |
+| `SharpTool_ListImplementations` | Gets the locations and FQNs of all implementations of an interface or abstract method, and lists derived classes for a base class. | `fullyQualifiedSymbolName` |
+| `SharpTool_LoadProject` | Type tree of one project (every type and member signature) without reading files. Call after LoadSolution. | `projectName` |
+| `SharpTool_LoadSolution` | Loads a `.sln` or `.slnx` into Roslyn. Call this first (or start the server with `--load-solution`). | `solutionPath` |
+| `SharpTool_ManageAttributes` | Reads or writes all attributes on a declaration. | `operation`, `codeToWrite`, `targetDeclaration` |
+| `SharpTool_ManageUsings` | Reads or writes using directives in a document. | `operation`, `codeToWrite`, `filePath` |
+| `SharpTool_MoveMember` | Moves a member (property, field, method, nested type, etc.) from one type/namespace to another. | `fullyQualifiedMemberName`, `fullyQualifiedDestinationTypeOrNamespaceName`, `commitMessage` |
+| `SharpTool_OverwriteMember` | Replaces the definition of an existing member or type with new C# code, or deletes it. | `fullyQualifiedMemberName`, `newMemberCode`, `commitMessage` |
+| `SharpTool_OverwriteRoslynDocument` | Overwrites an existing document file with the specified content. | `filePath`, `content`, `commitMessage` |
+| `SharpTool_ReadRawFromRoslynDocument` | Reads the content of a file in the solution or referenced directories. | `filePath` |
+| `SharpTool_ReadTypesFromRoslynDocument` | Returns a comprehensive tree of types (classes, interfaces, structs, etc.) and their members from a specified file. | `filePath` |
+| `SharpTool_RenameSymbol` | Renames a symbol (variable, method, property, type) and updates all references. | `fullyQualifiedSymbolName`, `newName`, `commitMessage` |
+| `SharpTool_RequestNewTool` | Allows requesting a new tool to be added to the SharpTools MCP server. | `toolName`, `toolDescription`, `expectedParameters`, `expectedOutput`, `justification` |
+| `SharpTool_SearchDefinitions` | Dual-engine pattern search across source code AND compiled assemblies for public APIs. | `regexPattern` |
+| `SharpTool_Undo` | Reverts the last applied change. Needs `--git-commit-edits`. | - |
+| `SharpTool_ViewDefinition` | Displays the verbatim source code from the declaration of a target symbol (class, method, property, etc.) with indentation omitted to save tokens. | `fullyQualifiedSymbolName` |
+
+## Testing (3)
+
+| Tool | What it does | Parameters |
+|---|---|---|
+| `dotnet_test_affected` | Finds the tests that reference the code in the changed files (via Roslyn, through the loaded solution) and runs only those. | `changedFiles`, `gitBase`, `maxDepth`, `dryRun`, `noBuild`, `maxSelectionSeconds`, `framework`, `maxSelectedFraction`, `timeoutSeconds` |
+| `dotnet_test_discover` | Lists the tests in a test project (dotnet test --list-tests). | `projectPath`, `filter` |
+| `dotnet_test_run` | Runs tests in a project or a whole solution with one dotnet test invocation and returns per-test results, failures with messages and stack traces. | `path`, `filter`, `testNames`, `noBuild`, `framework`, `timeoutSeconds` |
+
+## Build (4)
+
+| Tool | What it does | Parameters |
+|---|---|---|
+| `dotnet_build` | Builds a .NET project or solution with configurable options. | `projectPath`, `configuration`, `framework`, `runtime`, `verbosity`, `noRestore`, `verbose` |
+| `dotnet_build_with_properties` | Builds a .NET project with custom MSBuild properties. | `projectPath`, `properties`, `configuration`, `framework`, `verbose` |
+| `dotnet_clean` | Cleans build artifacts from a .NET project or solution. | `projectPath`, `configuration`, `verbose` |
+| `dotnet_restore` | Restores NuGet packages for a .NET project or solution. | `projectPath`, `verbose` |
+
+## Analysis (5)
+
+| Tool | What it does | Parameters |
+|---|---|---|
+| `dotnet_analyze_project` | Project facts: target frameworks, references, metrics and dependencies. | `path`, `includeMetrics`, `includeDependencies` |
+| `dotnet_analyze_quality` | Code-quality metrics for a project or folder. | `path` |
+| `dotnet_detect_circular_dependencies` | Project reference cycles in a solution. | `solutionPath` |
+| `dotnet_get_dependencies` | NuGet and project dependencies of a project. | `projectPath` |
+| `dotnet_scan_outdated_packages` | NuGet packages with newer versions available. | `projectPath` |
+
+## Orchestration (4)
+
+| Tool | What it does | Parameters |
+|---|---|---|
+| `configure_resource_limits` | Sets the maximum number of orchestrated operations that may run concurrently. | `maxConcurrency` |
+| `execute_workflow` | Runs tools of this server as a dependency graph: steps whose dependencies are done run in parallel, dependents wait. | `workflowName`, `steps` |
+| `get_resource_metrics` | Returns current concurrency limits and how many orchestrated operations are running or queued. | - |
+| `orchestrate_parallel` | Runs several tools of this server concurrently (throttled by the resource manager) and returns every result. | `operations`, `maxParallelism` |
+
+## Git (opt-in: --enable git) (10)
+
+| Tool | What it does | Parameters |
+|---|---|---|
+| `git_checkout_branch` | Switches to an existing git branch. | `repoPath`, `branchName` |
+| `git_commit` | Commits staged changes with a message. | `repoPath`, `message`, `allowEmpty` |
+| `git_create_branch` | Creates a new git branch and switches to it. | `repoPath`, `branchName`, `startPoint` |
+| `git_diff` | Shows differences between commits, branches, or working directory changes. | `repoPath`, `file`, `commit1`, `commit2` |
+| `git_list_branches` | Lists all branches in a git repository, with option to include remote branches. | `repoPath`, `includeRemote` |
+| `git_log` | Gets the commit history/log for a repository or branch. | `repoPath`, `count`, `branch` |
+| `git_pull` | Pulls changes from a remote repository and merges them into the current branch. | `repoPath`, `remote`, `branch` |
+| `git_push` | Pushes committed changes to a remote repository. | `repoPath`, `remote`, `branch`, `force` |
+| `git_repo_status` | Gets comprehensive information about a git repository including current branch, changes, ahead/behind status, and remotes. | `repoPath` |
+| `git_stage_changes` | Stages file changes for commit. | `repoPath`, `files` |
+
+## Monitoring (opt-in: --enable monitoring) (6)
+
+| Tool | What it does | Parameters |
+|---|---|---|
+| `dotnet_check_health` | Health check of the server process. | - |
+| `dotnet_force_gc` | Force a garbage collection (diagnostics only). | `generation`, `blocking` |
+| `dotnet_get_gc_stats` | Garbage-collector statistics. | - |
+| `dotnet_get_performance_metrics` | CPU, memory and thread metrics of the server process. | - |
+| `dotnet_get_resource_utilization` | Current resource use of the server process. | - |
+| `dotnet_start_profiling_session` | Collect CPU, memory and GC samples for a number of seconds. | `sessionName`, `durationSeconds`, `collectCpuSamples`, `collectMemorySamples`, `collectGcEvents` |
+
+See [Affected Tests](affected-tests.md) for how `dotnet_test_affected` decides, and [Configuration](configuration.md) for server options.
+
+# Affected tests (https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/affected-tests.md)
+
+# Affected tests
+
+`dotnet_test_affected` answers "which tests can my change break?" with the compiler, then runs only those.
+
+![How affected tests are chosen](../images/affected-tests.svg)
+
+## How it decides
+
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant Tool as dotnet_test_affected
+    participant Roslyn
+    participant CLI as dotnet test
+    Agent->>Tool: changed files (or git)
+    Tool->>Roslyn: symbols declared in those files
+    loop up to maxDepth hops, within maxSelectionSeconds
+        Tool->>Roslyn: FindReferences(symbol)
+        Roslyn-->>Tool: the members that use it
+    end
+    Tool->>Tool: which of them are test methods?
+    alt finished, and at most maxSelectedFraction of all tests
+        Tool->>CLI: one run per test project, filtered to those tests
+    else out of budget, or too many tests
+        Tool->>Tool: which test projects reference the changed projects?
+        Tool->>CLI: only those test projects (or the whole solution if that's all of them)
+    end
+    CLI-->>Tool: TRX results
+    Tool-->>Agent: results, the reason for each selected test (via), and what was run
+```
+<!-- mermaid: rendered on GitHub; see the SVG diagrams for the Pages version -->
+
+
+1. **Changed files**: from `changedFiles`, or from git (uncommitted changes, or `gitBase: "main"` for a branch).
+2. **Symbols**: everything the files declare that can run: methods, properties, constructors. A type or field hops through
+   its constructors (field initializers run there) and, for fields, through everything that reads them. That's how xUnit
+   `[MemberData]` theories are found.
+3. **Reference walk**: Roslyn finds every member that uses those symbols, then every member using *those*, up to
+   `maxDepth` hops (default 8).
+4. **Test methods**: members with `[Fact]`, `[Theory]`, `[Test]`, `[TestCase]`, `[TestCaseSource]`, `[TestMethod]` or
+   `[DataTestMethod]`.
+
+## When it doesn't filter by test name
+
+| Situation | Why | What runs |
+|---|---|---|
+| The walk didn't finish within `maxSelectionSeconds` (10) | The change touches code nearly everything depends on; tracing it costs more than running tests | The test projects that reference the changed projects |
+| The selection is more than `maxSelectedFraction` (20%) of all test methods | A filtered run that large is no faster than running those projects whole (measured on Polly) | Same |
+| A changed file isn't compiled C# (`.csproj`, `.razor`, `appsettings.json`, resources, a deleted `.cs` file) | The reference walk can't see it, but it can still break tests | The test projects that reference the project folder holding it; the file is listed in `untracedFiles` |
+| A build-wide file changed (`.props`, `.targets`, `global.json`, `nuget.config`, `.editorconfig`) | It can affect every project | The whole solution |
+| Every test project is reachable | Nothing to narrow | The whole solution, in one run |
+
+The response says what ran and why: `ranScope` is `selection`, `projects` or `solution`, `testProjectsRun` lists the projects,
+and `note` explains the reason. A partial selection is never presented as complete. The project step follows project
+references only: a test project that uses the changed code through a NuGet package reference isn't found. On a solution
+where every test project uses the changed library (Polly and `Polly.Core`), this still runs everything; it narrows when
+modules are independent.
+
+## Parameters
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `changedFiles` | git working tree | Files to start from |
+| `gitBase` | - | Diff against this ref instead, e.g. `main` |
+| `dryRun` | false | Only list the tests and why |
+| `maxDepth` | 8 | Reference hops. `3` narrows more changes but misses tests reached through long call chains |
+| `maxSelectionSeconds` | 10 | Time budget for the walk |
+| `maxSelectedFraction` | 0.2 | Above this share of all tests, run everything |
+| `framework` | all | Run one target framework, e.g. `net10.0` |
+| `noBuild` | false | Skip building the affected test projects |
+| `timeoutSeconds` | 600 | Kill the run if a test hangs; the response names the modules that never finished |
+
+## What it can't see
+
+- **Reflection** (`Activator.CreateInstance`, `GetMethod`, `BindingFlags`), **string-keyed lookups**, and **DI by
+  convention** (assembly scanning). A test that reaches your code only that way won't be selected. On Polly this was the
+  one miss out of 112 broken tests.
+- **Documentation and files outside every project** (`*.md`, images, CI workflows) are ignored: they can't break a test.
+- Calls through an **interface or base class** *are* followed: changing `OrderService.Submit` selects a test that only calls
+  `IOrderService.Submit`.
+- **Hanging tests** are killed after `timeoutSeconds` and reported by module, not by test name (VSTest runs do name the test).
+- **The first selection of a session** on busy code can hit the time budget and run everything; Roslyn caches what it
+  learned, so the same selection is fast the next time.
+
+## Test frameworks
+
+VSTest (`dotnet test` classic) and Microsoft.Testing.Platform (`"test": { "runner": "Microsoft.Testing.Platform" }` in
+global.json) are both supported, with xUnit v3 detected automatically and MSTest/NUnit handled through `--filter`.
+DotNetDevMCP runs `dotnet` from your project's directory, so your `global.json` (SDK version, test runner) applies.
+
+Numbers: [Benchmarks](benchmarks.md).
+
+# Configuration (https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/configuration.md)
+
+# Configuration
+
+Server options go after `--` in a `dnx` command, or straight after `dotnetdevmcp` for a global install:
+
+```bash
+dotnet dnx DotNetDevMCP --yes -- --load-solution MyApp.sln --enable git
+```
+
+| Option | Default | What it does |
+|---|---|---|
+| `--load-solution <path>` | - | Load a `.sln` or `.slnx` at startup, so the agent doesn't need `SharpTool_LoadSolution` first |
+| `--build-configuration <Debug\|Release>` | - | Configuration used when loading the solution |
+| `--enable <groups>` | none | Turn on optional tool groups: `git` (10 tools), `monitoring` (6). Comma-separated or repeated: `--enable git,monitoring` |
+| `--clean-env` | off | Start `dotnet` and `git` with a minimal environment (PATH, temp and profile folders, `DOTNET_*`, `NUGET_*`, `MSBUILD*` and the like) instead of inheriting yours, so tokens, API keys and cloud credentials in environment variables aren't passed on. Not a sandbox: see [Security](security.md) |
+| `--git-commit-edits` | off | Edit tools create a `sharptools/<timestamp>` branch and commit each change; enables `SharpTool_Undo` |
+| `--http` | off | Serve Streamable HTTP instead of stdio |
+| `--port <n>` | 3001 | Port for `--http` |
+| `--log-level <level>` | Information | `Verbose`, `Debug`, `Information`, `Warning`, `Error`, `Fatal` |
+| `--log-directory <dir>` | - | Also write rolling log files there. Logs always go to stderr, never stdout (stdout is the MCP channel) |
+| `--version` | | Print the version |
+| `--disable-git` | | Deprecated, has no effect |
+
+## Why git and monitoring are off by default
+
+Every tool the server registers is described to the agent in every session, which costs context tokens. An agent already
+has a shell for `git status` and `git commit`, and the monitoring tools describe the server process, not your code. So
+they're opt-in. Enable them if your client has no shell, or if you want the agent to stick to MCP tools.
+
+## Per-call options
+
+Test and build behavior is set per call, by the agent, through tool parameters: for example `framework`, `maxDepth` and
+`timeoutSeconds` on the testing tools, `verbose` on `dotnet_build`. See [Tools Reference](tools-reference.md) and
+[Affected Tests](affected-tests.md). You can ask for them in plain language: *"run the affected tests, net10.0 only"*.
+
+## HTTP mode
+
+```bash
+dotnetdevmcp --http --port 3001 --load-solution MyApp.sln
+```
+
+The MCP endpoint is `http://localhost:3001/`. It listens on localhost only and has no authentication, TLS or origin checks: don't expose it. See [Security](security.md).
+
+# Troubleshooting (https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/troubleshooting.md)
+
+# Troubleshooting
+
+Start the server with `--log-level Debug --log-directory <dir>` to get logs for any of these. Didn't find your problem?
+[Open a bug report](https://github.com/csa7mdm/DotNetDevMCP/issues/new?template=bug_report.yml) and add it here once
+it's solved.
+
+## The server doesn't start, or the client shows no tools
+
+- **`dotnet --version` must be 10.x.** DotNetDevMCP needs the .NET 10 SDK (your solution can target older frameworks).
+- **`'dnx' is not recognized` or the client fails silently on Windows.** Use `"command": "dotnet"` with
+  `"args": ["dnx", "DotNetDevMCP", "--yes"]`. Some clients start servers without a shell and can't run `dnx.cmd`.
+- **Nothing on stdout but no tools either.** Logs go to stderr; your client usually shows them in its MCP log view.
+- **Corporate NuGet feed.** `dnx` uses your NuGet configuration. If nuget.org is blocked, install once with
+  `dotnet tool install -g DotNetDevMCP --add-source <feed>` and use `dotnetdevmcp` as the command.
+
+## "No solution loaded"
+
+Code-intelligence and affected-test tools need a loaded solution. Ask the agent to load it
+(*"Load C:/src/MyApp/MyApp.sln"*) or start the server with `--load-solution`.
+
+## Loading the solution is slow or fails
+
+- Large multi-targeted solutions take 30 s or more: every target framework is a separate Roslyn project.
+- Run `dotnet restore` first. Roslyn loads projects the way MSBuild sees them, so a solution that doesn't restore won't load.
+- `.slnx` is supported.
+
+## Affected tests
+
+- **`selectionComplete: false`, whole solution ran.** Your change reaches code that too much depends on to trace within
+  `maxSelectionSeconds` (default 10). This is by design. The first call of a session is also slower: run it again,
+  or raise `maxSelectionSeconds`.
+- **`ranWholeSolution: true` with a complete selection.** The selection was more than 20% of your tests, where a filtered
+  run isn't faster. Change with `maxSelectedFraction`.
+- **A test you expected isn't selected.** Check with `dryRun: true`. Reflection, string-keyed lookups and DI by convention
+  are invisible to the walk. A very long call chain may need more than `maxDepth` (8) hops. Please report it with the
+  `via` output: it helps improve the walk.
+- **Slow on a multi-targeted solution.** Pass `framework: "net10.0"` (or ask *"net10.0 only"*): each target framework
+  otherwise starts its own test host.
+
+## Tests
+
+- **"Zero tests ran" on a Microsoft.Testing.Platform repo.** The filter matched nothing; check the names with `dryRun`.
+- **Run killed after 600 s.** A test hung. The error names the test modules that never finished; `timeoutSeconds`
+  changes the limit.
+- **Wrong SDK or test mode.** DotNetDevMCP runs `dotnet` from your project's directory, so the `global.json` there applies.
+  If a test run behaves differently from your terminal, run the same command from that directory.
+
+## Edits
+
+- **`SharpTool_Undo` says it needs git integration.** Start the server with `--git-commit-edits`; undo reverts the commit
+  each edit makes.
+- **An edit reformatted my file.** Edit tools format only the lines they change, following your `.editorconfig`. If more
+  changed, it's a bug: please report it.
+
+## `--clean-env` and rejected values
+
+- **A build or restore fails only with `--clean-env`.** Something it needs lives in an environment variable that isn't on the
+  allow-list (a private feed token not named `NUGET_*`, or any other variable your build reads). Rename it to an allowed
+  prefix, or run without `--clean-env` for that repository. `--log-level Debug` lists the names of the variables that were dropped.
+- **A tool rejects my value** (framework, configuration, runtime, branch). Values are validated so they can't add options to
+  `dotnet` or `git`: use plain names like `net10.0`, `Release`, `win-x64`, `feature/login`.
+
+## Too many tools / token use
+
+37 tools are on by default. Git and monitoring (16 more) are opt-in with `--enable`. See [Configuration](configuration.md).
+
+# Security (https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/security.md)
+
+# Security
+
+DotNetDevMCP is a local developer tool: it runs as you, for an AI agent you chose to trust with your code. This page says
+exactly what that means. The authoritative version is [SECURITY.md](https://github.com/csa7mdm/DotNetDevMCP/blob/main/SECURITY.md#security-model);
+on 0.3.0 or 0.3.1, upgrade: those versions lack the argument validation and the stricter path check. Vulnerabilities go to a [private report](https://github.com/csa7mdm/DotNetDevMCP/security/advisories/new), never a public issue.
+
+```mermaid
+flowchart LR
+    subgraph You["Your machine, your user account"]
+        Agent[AI agent] -->|MCP| Server[DotNetDevMCP]
+        Server -->|separate, validated arguments| Dotnet[dotnet build / test]
+        Server -->|separate, validated arguments| Git[git]
+        Server -->|edits only inside the solution folder| Files[Solution files]
+        Dotnet -->|runs whatever the solution contains| Code[Build targets, tests]
+    end
+    Env[(Environment variables: tokens, keys)] -. "inherited unless --clean-env" .-> Dotnet
+    Env -. "inherited unless --clean-env" .-> Git
+```
+<!-- mermaid: rendered on GitHub; see the SVG diagrams for the Pages version -->
+
+
+## What to know
+
+| Question | Answer |
+|---|---|
+| Can a build or test run arbitrary code? | **Yes.** `dotnet build`/`test` run MSBuild targets, source generators and test code from the solution, with your privileges, just as in your terminal. A malicious test or `.csproj` (written by the agent, or planted in a repository to steer it) runs when built. There is no sandbox. |
+| Can a tool argument sneak in extra `dotnet` or `git` options? | No. Arguments are passed separately and validated: framework, configuration, runtime, MSBuild property names, git refs. Values like `net10.0 --logger:x`, `-p:CustomBeforeMicrosoftCommonTargets=...` or `--output=...` are rejected or passed as a single inert value. |
+| Can edit tools write outside my solution? | No. Roslyn edit tools normalize the path and refuse anything outside the loaded solution's folder (including `..` tricks and look-alike sibling folders). Build, test and git tools accept any path they're given. |
+| Do child processes see my secrets? | By default they inherit the server's environment variables. Start the server with `--clean-env` to give `dotnet` and `git` a minimal environment instead. That is not a sandbox: files like `~/.aws/credentials` and the network remain reachable. |
+| Is `--http` safe to expose? | **No.** It listens on localhost only and has no authentication, TLS or origin checks. Don't forward the port, proxy it, or run it on a shared machine. |
+
+## Recommended setups
+
+| Situation | Setup |
+|---|---|
+| Your own code, your own machine | Defaults are fine. Consider `--clean-env` if you keep tokens in environment variables. |
+| A repository you don't fully trust (a stranger's pull request, a downloaded sample) | Run the agent and DotNetDevMCP in a container or VM with only that repository mounted, no credentials, and restricted network. |
+| CI, shared servers, several users | Not supported today. It would need authentication, a sandbox per session and audit logging. |
+
+## Why it isn't sandboxed
+
+A sandbox that still lets `dotnet build` restore packages and run tests means a container or VM per session, with its own
+SDK, NuGet cache and network policy. That's a deployment concern outside a local stdio tool. If you need it,
+[say so in Discussions](https://github.com/csa7mdm/DotNetDevMCP/discussions): demand decides what gets built next.
+
+# Architecture (https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/architecture.md)
+
+# Architecture
+
+A map for contributors. The code is in [csa7mdm/DotNetDevMCP](https://github.com/csa7mdm/DotNetDevMCP).
+
+## Projects
+
+```mermaid
+flowchart TB
+    Server["DotNetDevMCP.Server<br/>CLI options, tool registration, stdio / HTTP"]
+    CI["CodeIntelligence<br/>Roslyn workspace, SharpTool_* (fork of SharpTools)"]
+    Testing["Testing<br/>dotnet test runner, TRX parsing, affected-test selection"]
+    Build["Build<br/>dotnet build, restore, clean"]
+    Analysis["Analysis<br/>dependencies, quality"]
+    Orch["Orchestration<br/>ConcurrentExecutor, WorkflowEngine, ResourceManager"]
+    SC["SourceControl<br/>git tools (opt-in)"]
+    Mon["Monitoring<br/>process metrics (opt-in)"]
+    Core["Core<br/>shared interfaces and models"]
+
+    Server --> CI & Testing & Build & Analysis & Orch
+    Server -. "--enable git" .-> SC
+    Server -. "--enable monitoring" .-> Mon
+    Testing --> CI
+    CI & Testing & Orch --> Core
+```
+<!-- mermaid: rendered on GitHub; see the SVG diagrams for the Pages version -->
+
+
+| Project | Start reading at |
+|---|---|
+| Server | `Program.cs`: options and `AddServices`, the one place every tool is registered |
+| CodeIntelligence | `Services/SolutionManager.cs` (loading), `Mcp/Tools/AnalysisTools.cs` (find references), `Services/CodeModificationService.cs` (edits) |
+| Testing | `TestRunner.cs` (VSTest and Microsoft.Testing.Platform), `AffectedTestFinder.cs` (the reference walk), `Mcp/Tools/TestingTools.cs` |
+| Orchestration | `WorkflowEngine.cs`, `ConcurrentExecutor.cs`, `Mcp/Tools/OrchestrationTools.cs` |
+
+## A tool call, end to end
+
+```mermaid
+sequenceDiagram
+    participant Client as MCP client
+    participant Server as DotNetDevMCP (stdio)
+    participant Tool as tool method
+    participant Ext as Roslyn / dotnet / git
+    Client->>Server: tools/call {name, arguments} (JSON-RPC on stdin)
+    Server->>Tool: bind arguments, inject services
+    Tool->>Ext: in-process Roslyn call, or a child process
+    Ext-->>Tool: result
+    Tool-->>Server: object (serialized to JSON)
+    Server-->>Client: result (stdout)
+```
+<!-- mermaid: rendered on GitHub; see the SVG diagrams for the Pages version -->
+
+
+Two consequences of stdio that every contributor should know:
+
+- **stdout is the protocol.** Logs go to stderr. Child processes get their own redirected stdout and a closed stdin;
+  otherwise they read from the MCP connection and hang.
+- **Tool parameters are arrays.** The MCP C# SDK tries to resolve `IEnumerable<T>` parameters from dependency injection;
+  use `string[]`.
+
+## Design decisions
+
+Architecture decision records are in [docs/architecture/adr](https://github.com/csa7mdm/DotNetDevMCP/tree/main/docs/architecture/adr),
+starting with why the Roslyn tools are a fork of [SharpTools](https://github.com/kooshi/SharpToolsMCP) rather than a
+package reference.
+
+How affected tests are chosen: [Affected Tests](affected-tests.md). Next: [Contributing](contributing.md).
+
+# Contributing (https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/contributing.md)
+
+# Contributing
+
+Contributions of every size are welcome, and not only code.
+
+```mermaid
+flowchart LR
+    Try[Run it on your solution] --> Report{Something off?}
+    Report -- yes --> Issue[Bug report or Discussion]
+    Report -- no --> Share[Share your numbers in Discussions]
+    Issue --> Fix[Fix it yourself?]
+    Fix --> PR[Pull request]
+    Idea[Idea for a tool] --> Feature[Feature request]
+    Docs[Something unclear here] --> Edit[Edit this wiki]
+```
+<!-- mermaid: rendered on GitHub; see the SVG diagrams for the Pages version -->
+
+
+## Ways to help
+
+1. **Try it on your own solution** and report what happened: large or multi-targeted solutions, and test suites on
+   Microsoft.Testing.Platform, NUnit, MSTest or TUnit are the most valuable. [Bug report](https://github.com/csa7mdm/DotNetDevMCP/issues/new?template=bug_report.yml),
+   or post your numbers in [Discussions](https://github.com/csa7mdm/DotNetDevMCP/discussions).
+2. **Pick a [good first issue](https://github.com/csa7mdm/DotNetDevMCP/labels/good%20first%20issue).** Comment that you're
+   on it; the maintainer answers questions and reviews quickly.
+3. **Edit this wiki.** New MCP client setup, a clearer tutorial step, a troubleshooting entry.
+4. **Propose a tool.** [Feature request](https://github.com/csa7mdm/DotNetDevMCP/issues/new?template=feature_request.yml):
+   describe what your agent was trying to do and where it got stuck.
+
+## Building and testing
+
+```bash
+git clone https://github.com/csa7mdm/DotNetDevMCP.git
+cd DotNetDevMCP
+dotnet build -c Release
+dotnet test -c Release
+```
+
+To try your build from an MCP client, point the client at `src/DotNetDevMCP.Server/bin/Release/net10.0/dotnetdevmcp`
+(`.exe` on Windows). The full guide, code style and pull request checklist are in
+[CONTRIBUTING.md](https://github.com/csa7mdm/DotNetDevMCP/blob/main/CONTRIBUTING.md); the map of the code is on
+[Architecture](architecture.md).
+
+Changing how tests are selected or run? Re-run [benchmarks/polly](https://github.com/csa7mdm/DotNetDevMCP/blob/main/benchmarks/polly/README.md)
+and put the before/after numbers in your pull request.
+
+Everyone taking part follows the [Code of Conduct](https://github.com/csa7mdm/DotNetDevMCP/blob/main/CODE_OF_CONDUCT.md).
+If the project saves you time, you can [sponsor its development](https://github.com/sponsors/csa7mdm).
