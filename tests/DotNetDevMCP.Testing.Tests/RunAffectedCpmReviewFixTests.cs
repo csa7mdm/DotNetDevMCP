@@ -165,6 +165,67 @@ public sealed class RunAffectedCpmReviewFixTests : IDisposable
         Assert.Equal("No changed code or project files. Binary references (.dll) are not traced.", Prop<string>(result, "Message"));
     }
 
+    [Fact]
+    public async Task Round2_N1_an_unreadable_assets_file_blocks_narrowing_instead_of_reading_as_no_packages()
+    {
+        var repo = BuildRepo();
+        // Half-written restore: Other.Tests' assets can't be parsed, so whether it uses Priv.Analyzer is unknown.
+        File.WriteAllText(Path.Combine(Path.GetDirectoryName(repo.OtherTestsCsproj)!, "obj", "project.assets.json"), "{\"targets\": {\"net10.0\": {");
+        File.WriteAllText(repo.PropsPath, PropsXml("1.1.0", "1.0.0"));
+
+        var result = await CallRunAffected(repo.Solution, [repo.PropsPath]);
+
+        Assert.Equal("solution", Prop<string>(result, "RanScope"));
+        var note = Prop<string>(result, "Note")!;
+        Assert.Contains("Other.Tests.csproj", note);
+        Assert.Contains("not restored or unreadable", note);
+    }
+
+    [Fact]
+    public async Task Round2_N2_non_ascii_text_outside_comments_still_narrows_a_version_only_bump()
+    {
+        var repo = BuildRepo();
+        var withAuthors = PropsXml("1.0.0", "1.0.0").Replace("</PropertyGroup>", "  <Authors>Müller</Authors></PropertyGroup>");
+        File.WriteAllText(repo.PropsPath, withAuthors);
+        Git(_root, "commit", "-am", "authors");
+        File.WriteAllText(repo.PropsPath, withAuthors.Replace("Include=\"Priv.Analyzer\" Version=\"1.0.0\"", "Include=\"Priv.Analyzer\" Version=\"1.1.0\""));
+
+        var result = await CallRunAffected(repo.Solution, [repo.PropsPath]);
+
+        Assert.Equal("projects", Prop<string>(result, "RanScope"));
+        Assert.Equal([Path.GetFileName(repo.LibATestsCsproj)], Prop<IEnumerable<string>>(result, "TestProjectsRun")!);
+    }
+
+    [Fact]
+    public async Task Round2_N3_a_package_used_only_by_a_project_no_test_reaches_says_so()
+    {
+        var repo = BuildRepo(includeOtherTests: false);
+        File.WriteAllText(Path.Combine(Path.GetDirectoryName(repo.TestUtilsCsproj)!, "obj", "project.assets.json"), AssetsJson(("Unrelated.Package", "package")));
+        File.WriteAllText(repo.PropsPath, PropsXml("1.0.0", "1.1.0"));
+
+        var result = await CallRunAffected(repo.Solution, [repo.PropsPath]);
+
+        Assert.Equal("solution", Prop<string>(result, "RanScope"));
+        Assert.Contains("used by TestUtils.csproj, but no runnable test project reaches those", Prop<string>(result, "Note"));
+    }
+
+    [Fact]
+    public async Task Round2_N5_test_data_inside_a_project_counts_as_a_change()
+    {
+        var repo = BuildRepo();
+        var testData = Path.Combine(Path.GetDirectoryName(repo.OtherTestsCsproj)!, "TestData", "expected.txt");
+
+        // Alone: a .txt inside a test project is test data, not documentation, so that project runs.
+        var alone = await CallRunAffected(repo.Solution, [testData]);
+        Assert.Equal("projects", Prop<string>(alone, "RanScope"));
+        Assert.Equal([Path.GetFileName(repo.OtherTestsCsproj)], Prop<IEnumerable<string>>(alone, "TestProjectsRun")!);
+
+        // With a props bump it's a second changed file, so the props narrowing doesn't apply.
+        File.WriteAllText(repo.PropsPath, PropsXml("1.1.0", "1.0.0"));
+        var both = await CallRunAffected(repo.Solution, [repo.PropsPath, testData]);
+        Assert.Equal("solution", Prop<string>(both, "RanScope"));
+    }
+
     private static T? Prop<T>(object obj, string name)
     {
         var value = obj.GetType().GetProperty(name)?.GetValue(obj) ?? throw new InvalidOperationException($"No property '{name}' on {obj.GetType()}");

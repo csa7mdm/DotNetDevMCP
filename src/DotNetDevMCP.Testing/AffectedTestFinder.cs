@@ -295,7 +295,7 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
     /// <summary>Result of <see cref="FindTestProjectsForPackageChange"/>: either the runnable test projects reachable
     /// from the change, or - when UnrestoredProjectPath is set - a signal that narrowing isn't safe because that
     /// project's restore state is unknown (TestProjects is then always empty).</summary>
-    public sealed record PackageChangeImpact(IReadOnlyList<string> TestProjects, string? UnrestoredProjectPath);
+    public sealed record PackageChangeImpact(IReadOnlyList<string> TestProjects, string? UnrestoredProjectPath, IReadOnlyList<string>? UsingProjects = null);
 
     /// <summary>
     /// Central Package Management precision support: the runnable test projects reachable from a change to the given
@@ -343,7 +343,9 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
 
         var testProjects = reachable.Select(solution.GetProject).OfType<Project>().Where(IsRunnableTestProject)
             .Select(p => p.FilePath).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        return new PackageChangeImpact(testProjects, null);
+        var usingProjects = matched.Select(solution.GetProject).OfType<Project>().Select(p => p.FilePath).OfType<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return new PackageChangeImpact(testProjects, null, usingProjects);
     }
 
     /// <summary>
@@ -443,19 +445,19 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
     /// JsonElement access is guarded by a ValueKind check first, since JsonElement's Get/TryGetProperty and
     /// EnumerateObject throw InvalidOperationException on the wrong kind rather than returning false.
     /// </summary>
-    private static HashSet<string> ReadAssetsPackageIds(string assetsJsonPath)
+    private static HashSet<string>? ReadAssetsPackageIds(string assetsJsonPath)
     {
         var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (!File.Exists(assetsJsonPath)) return ids;
+        if (!File.Exists(assetsJsonPath)) return null;
         try
         {
             using var stream = File.OpenRead(assetsJsonPath);
             using var document = JsonDocument.Parse(stream);
-            if (document.RootElement.ValueKind != JsonValueKind.Object) return ids;
-            if (!document.RootElement.TryGetProperty("targets", out var targets) || targets.ValueKind != JsonValueKind.Object) return ids;
+            if (document.RootElement.ValueKind != JsonValueKind.Object) return null;
+            if (!document.RootElement.TryGetProperty("targets", out var targets) || targets.ValueKind != JsonValueKind.Object) return null;
             foreach (var tfm in targets.EnumerateObject())
             {
-                if (tfm.Value.ValueKind != JsonValueKind.Object) continue;
+                if (tfm.Value.ValueKind != JsonValueKind.Object) return null;
                 foreach (var entry in tfm.Value.EnumerateObject())
                 {
                     if (entry.Value.ValueKind != JsonValueKind.Object) continue;
@@ -467,7 +469,9 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
-            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // Unknown, not empty: a half-written or locked assets file must not read as "uses no packages", or the
+            // Directory.Packages.props narrowing could drop a test project that does use the changed package.
+            return null;
         }
         return ids;
     }

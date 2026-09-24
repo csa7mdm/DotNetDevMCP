@@ -87,7 +87,10 @@ public static class TestingTools
         var files = changedFiles is { Length: > 0 } ? changedFiles : await GitChangedFilesAsync(solutionDir, gitBase, cancellationToken);
         logger.LogDebug("dotnet_test_affected: resolved {Count} changed files in {Ms} ms", files.Length, sw.ElapsedMilliseconds);
         var solution = solutions.CurrentSolution;
-        var changed = files.Select(f => Path.GetFullPath(Path.Combine(solutionDir, f))).Where(f => !DocumentationExtensions.Contains(Path.GetExtension(f))).ToArray();
+        // A .txt/.png inside a project folder can be test data (TestData/expected.txt), so only files outside every
+        // project are dropped as documentation. ponytail: a README.md inside a project now triggers its project fallback.
+        var changed = files.Select(f => Path.GetFullPath(Path.Combine(solutionDir, f)))
+            .Where(f => !DocumentationExtensions.Contains(Path.GetExtension(f)) || AffectedTestFinder.OwningProjects(solution, f).Count > 0).ToArray();
         // Never traced at any layer (not a document, not a project-owned file, not build-wide): noted, not analyzed.
         var dllChanged = changed.Where(f => f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)).ToArray();
         // The walk traces only C# the solution compiles. Anything else (a .csproj, .razor, appsettings.json, a deleted file)
@@ -257,7 +260,7 @@ public static class TestingTools
         return new { Success = summary.Success, ChangedFiles = files, UntracedFiles = untraced, SelectionComplete = selection.Complete, selection.SymbolsSearched, selection.TotalTestMethods, Note = note, RanWholeSolution = ranWholeSolution, RanScope = ScopeName(scope), TestProjectsRun = testProjectsRun.Select(Path.GetFileName), AffectedTests = list, Ran = true, Run = Shape(summary) };
     }
 
-    /// <summary>Changes to these can't break a test. ponytail: extension list, not content sniffing.</summary>
+    /// <summary>Outside every project folder, changes to these can't break a test. ponytail: extension list, not content sniffing.</summary>
     private static readonly HashSet<string> DocumentationExtensions = new(StringComparer.OrdinalIgnoreCase) { ".md", ".txt", ".png", ".jpg", ".jpeg", ".gif", ".svg" };
 
     /// <summary>Files outside any project folder that still feed every build.</summary>
@@ -348,7 +351,7 @@ public static class TestingTools
         {
             newXml = await File.ReadAllTextAsync(propsFilePath, ct);
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return new CpmScope([], "", $"Directory.Packages.props changed but could not be read; {fallbackSuffix}");
         }
@@ -364,7 +367,8 @@ public static class TestingTools
         var relative = Path.GetRelativePath(root, propsFilePath).Replace('\\', '/');
         var gitRef = gitBase ?? "HEAD";
 
-        var (showExit, showOut, showErr, _) = await TestRunner.RunProcessAsync("git", ["show", $"{gitRef}:{relative}"], ct, root);
+        var (showExit, showOut, showErr, _) = await TestRunner.RunProcessAsync("git", ["show", $"{gitRef}:{relative}"], ct, root, outputEncoding: System.Text.Encoding.UTF8);
+        showOut = showOut.TrimStart('﻿');
         if (showExit != 0)
         {
             return new CpmScope([], "", $"Directory.Packages.props changed but its previous version ({gitRef}:{relative}) could not be read from git ({showErr.Trim()}); {fallbackSuffix}");
@@ -396,11 +400,14 @@ public static class TestingTools
         var impact = AffectedTestFinder.FindTestProjectsForPackageChange(solution, changedIds, assetsCache);
         if (impact.UnrestoredProjectPath is { } unrestored)
         {
-            return new CpmScope([], idsSummary, $"Directory.Packages.props changed but {Path.GetFileName(unrestored)} has no obj/project.assets.json (not restored), so package usage can't be checked for the whole solution; {fallbackSuffix}");
+            return new CpmScope([], idsSummary, $"Directory.Packages.props changed but {Path.GetFileName(unrestored)} has no readable obj/project.assets.json (not restored or unreadable), so package usage can't be checked for the whole solution; {fallbackSuffix}");
         }
         if (impact.TestProjects.Count == 0)
         {
-            return new CpmScope([], idsSummary, $"Directory.Packages.props changed ({idsSummary}) but no restored project references those packages; {fallbackSuffix}");
+            var reason = impact.UsingProjects is { Count: > 0 } users
+                ? $"they are used by {string.Join(", ", users.Select(Path.GetFileName))}, but no runnable test project reaches those"
+                : "no restored project references those packages";
+            return new CpmScope([], idsSummary, $"Directory.Packages.props changed ({idsSummary}) but {reason}; {fallbackSuffix}");
         }
 
         return new CpmScope(impact.TestProjects, idsSummary, $"Directory.Packages.props changed: {idsSummary}; running the test projects that use them.");
@@ -408,7 +415,8 @@ public static class TestingTools
 
     /// <summary>
     /// Package ids whose &lt;PackageVersion Include="X" Version="V" /&gt; entry was added, removed, or changed
-    /// version between two versions of a Directory.Packages.props file's XML (namespace-agnostic: an SDK-style props
+    /// version (only a changed version can lead to narrowing: an added or removed entry already fails
+    /// <see cref="IsOnlyPackageVersionChange"/>, so the caller runs the whole solution) between two versions of a Directory.Packages.props file's XML (namespace-agnostic: an SDK-style props
     /// file declares no xmlns, but this tolerates one if present). Pure and synchronous, so it's unit-testable
     /// without git or the filesystem. Null - not throwing - when either document fails to parse as XML: the caller
     /// falls back to today's whole-solution behavior for a props file it can't safely diff. Reports only the id

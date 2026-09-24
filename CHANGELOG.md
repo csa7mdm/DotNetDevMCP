@@ -36,6 +36,11 @@ All notable changes to DotNetDevMCP are documented here. The format follows
   changed, an unrestored project, or no restored project uses those ids). Test projects with no
   `obj/project.assets.json` (not restored) are called out in the note when the run falls back to whole test projects.
 
+### Fixed
+- `dotnet_test_affected`: a changed `.txt`, `.png` or other "documentation" file inside a project folder (test data such as
+  `TestData/expected.txt`) was ignored, so nothing ran. Only such files outside every project are ignored now; inside a
+  project they select that project's tests.
+
 ## [0.3.3] - 2026-09-24
 
 Prompted by an external evaluation; each claim was checked against the code first.
