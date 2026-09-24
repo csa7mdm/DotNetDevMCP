@@ -2,14 +2,19 @@
 
 <!-- mcp-name: io.github.csa7mdm/dotnetdevmcp -->
 
-An [MCP](https://modelcontextprotocol.io) server that gives AI coding agents real .NET tooling: Roslyn code intelligence, `dotnet build`/`test`, git, and an orchestrator that runs those tools concurrently as a dependency graph.
+An [MCP](https://modelcontextprotocol.io) server that gives AI coding agents real .NET tooling: Roslyn code intelligence, `dotnet build`/`test`, affected-test selection, and an orchestrator that runs those tools concurrently as a dependency graph.
 
 [![Build and Test](https://github.com/csa7mdm/DotNetDevMCP/actions/workflows/build.yml/badge.svg)](https://github.com/csa7mdm/DotNetDevMCP/actions/workflows/build.yml)
 [![NuGet](https://img.shields.io/nuget/v/DotNetDevMCP.svg)](https://www.nuget.org/packages/DotNetDevMCP)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![NuGet downloads](https://img.shields.io/nuget/dt/DotNetDevMCP.svg)](https://www.nuget.org/packages/DotNetDevMCP)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/csa7mdm/DotNetDevMCP/blob/main/LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
 
 Agents working on .NET code usually get by with `grep` and shelling out to `dotnet`. That means they read files instead of symbols, edit text instead of syntax trees, and run one command at a time. DotNetDevMCP replaces that with 37 tools by default (53 with the optional groups below enabled) that use the compiler's view of your solution and can run builds, tests and analysis in parallel.
+
+![How DotNetDevMCP works: an AI agent talks MCP to DotNetDevMCP, which uses Roslyn and the dotnet CLI on your solution](https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/images/how-it-works.svg)
+
+New here? The [wiki](https://github.com/csa7mdm/DotNetDevMCP/wiki) has a [first-session tutorial](https://github.com/csa7mdm/DotNetDevMCP/wiki/Tutorial), setup for every MCP client, and troubleshooting.
 
 ## Install
 
@@ -117,6 +122,8 @@ Measured with BenchmarkDotNet on an i7-10750H, .NET 10.0.9. The orchestration be
 
 ## Affected tests
 
+![How dotnet_test_affected chooses tests: changed files, symbols, reference walk, test methods, then either a filtered run or the whole solution](https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/images/affected-tests.svg)
+
 After an edit, the agent usually reruns the whole suite. `dotnet_test_affected` asks Roslyn instead: take the symbols declared in the changed files, follow references (up to `maxDepth` hops, default 8) until you land in a method with `[Fact]`, `[Theory]`, `[Test]`, `[TestCase]` or `[TestMethod]`, then run exactly those. Changed files default to the git working tree, or `gitBase: "main"` for a branch. `dryRun: true` lists the tests without running them; `framework: "net10.0"` runs one target framework of multi-targeted test projects.
 
 The walk has a time budget (`maxSelectionSeconds`, default 10). A change to code that everything depends on reaches too much to trace cheaply; then the whole solution runs instead and the response says so (`selectionComplete: false`). The same happens when the selection is more than 20% of all tests (`maxSelectedFraction`), where a filtered run is no faster. You never get a silently partial selection. Runs are killed after `timeoutSeconds` (default 600) so a hanging test cannot hang the agent; the response names the test modules that never finished. `maxDepth: 3` narrows more changes but misses more tests. Works with VSTest and with Microsoft.Testing.Platform (`"test": { "runner": "Microsoft.Testing.Platform" }` in global.json).
@@ -129,7 +136,18 @@ On this repository, editing `ConcurrentExecutor.cs` selects 22 of 44 tests (the 
 | `dotnet_test_run` | 44 | 8.3 s |
 | `dotnet_test_affected` (change to `ConcurrentExecutor.cs`) | 22 | 6.6 s |
 
-The suite here is small, so the saving is small. On a real library the picture is clearer: [benchmarks/polly](benchmarks/polly/README.md) replays 40 Polly commits and injects faults into its code. A one-file change ran its 5 affected tests in 4.6 s against 33 s for the net10.0 suite, and the selections included 111 of the 112 tests the injected faults broke (the miss builds its object through reflection). Changes that reach hundreds of tests gain nothing: of the last 40 commits, 16 ran a filtered selection and 24 ran the full suite. The first selection of a session on busy code is slower (Roslyn binds the files it touches, then caches them). `dryRun: true` shows what it picked and why (`via`).
+The suite here is small, so the saving is small. On a real library the picture is clearer: [benchmarks/polly](https://github.com/csa7mdm/DotNetDevMCP/blob/main/benchmarks/polly/README.md) replays 40 Polly commits and injects faults into its code. A one-file change ran its 5 affected tests in 4.6 s against 33 s for the net10.0 suite, and the selections included 111 of the 112 tests the injected faults broke (the miss builds its object through reflection). Changes that reach hundreds of tests gain nothing: of the last 40 commits, 16 ran a filtered selection and 24 ran the full suite. The first selection of a session on busy code is slower (Roslyn binds the files it touches, then caches them). `dryRun: true` shows what it picked and why (`via`).
+
+![Benchmark on Polly: 5 affected tests in 5.1 s against 48.1 s for the full suite; 6.5 KB of references against 202 KB of grep output](https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/images/benchmark-polly.svg)
+
+## Help, feedback and contributing
+
+- **Questions, ideas, "is this a bug?"**: [Discussions](https://github.com/csa7mdm/DotNetDevMCP/discussions).
+- **Something broke**: [open a bug report](https://github.com/csa7mdm/DotNetDevMCP/issues/new?template=bug_report.yml). The tool name and the arguments it got are the most useful part.
+- **Want to help?** Start with a [good first issue](https://github.com/csa7mdm/DotNetDevMCP/labels/good%20first%20issue) or read [CONTRIBUTING](https://github.com/csa7mdm/DotNetDevMCP/blob/main/CONTRIBUTING.md). Running DotNetDevMCP on your own solution and reporting what happened helps just as much.
+- **Docs**: the [wiki](https://github.com/csa7mdm/DotNetDevMCP/wiki) (tutorial, tool reference, troubleshooting) is open to edits.
+- **Security**: report [privately](https://github.com/csa7mdm/DotNetDevMCP/security/advisories/new).
+- Everyone here follows the [Code of Conduct](https://github.com/csa7mdm/DotNetDevMCP/blob/main/CODE_OF_CONDUCT.md). If DotNetDevMCP saves you time, you can [sponsor its development](https://github.com/sponsors/csa7mdm).
 
 ## Build from source
 
@@ -165,10 +183,10 @@ Built on the official [MCP C# SDK](https://github.com/modelcontextprotocol/cshar
 
 ## Status
 
-0.3.0. The Roslyn tools are mature (they come from SharpTools). Testing, build, git and orchestration are newer and have been exercised on this repository and a few others; expect rough edges on unusual project layouts. Issues and PRs welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
+0.3.1. The Roslyn tools are mature (they come from SharpTools). Testing, build, git and orchestration are newer and have been exercised on this repository and a few others; expect rough edges on unusual project layouts. Issues and PRs welcome, see [CONTRIBUTING](https://github.com/csa7mdm/DotNetDevMCP/blob/main/CONTRIBUTING.md).
 
 Known gaps: `dotnet_test_affected` follows C# references only (no reflection, no DI-by-convention, no string-keyed lookups), so a change reached only through those paths will not select the test; use `dryRun` to check what it picks. Tests that hang instead of failing are only caught by a run that finishes. Test attribute detection covers xUnit, NUnit and MSTest by attribute name. Past the command-line length limit the filter widens from methods to classes, then to the whole project (more tests, never fewer).
 
 ## Credits and license
 
-MIT. The code-intelligence module is a fork of [SharpTools](https://github.com/kooshi/SharpToolsMCP) by кɵɵѕнī, also MIT; see [LICENSE](LICENSE) and [ADR-001](docs/architecture/adr/001-fork-sharptools.md) for why it was forked rather than referenced.
+MIT. The code-intelligence module is a fork of [SharpTools](https://github.com/kooshi/SharpToolsMCP) by кɵɵѕнī, also MIT; see [LICENSE](https://github.com/csa7mdm/DotNetDevMCP/blob/main/LICENSE) and [ADR-001](https://github.com/csa7mdm/DotNetDevMCP/blob/main/docs/architecture/adr/001-fork-sharptools.md) for why it was forked rather than referenced.

@@ -6,8 +6,8 @@ Currently, only the latest version of DotNetDevMCP is supported with security up
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
-| < 0.1   | :x:                |
+| 0.3.x   | :white_check_mark: |
+| < 0.3   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -99,7 +99,7 @@ DotNetDevMCP depends on:
 ## Security Updates
 
 Security updates will be released as:
-- Patch versions for non-breaking security fixes (0.1.x)
+- Patch versions for non-breaking security fixes (0.3.x)
 - Minor versions for breaking security fixes (0.x.0)
 
 All security updates will be:
@@ -115,4 +115,4 @@ We recognize and thank security researchers who responsibly disclose vulnerabili
 
 ---
 
-**Last Updated**: December 31, 2025
+**Last Updated**: September 24, 2026

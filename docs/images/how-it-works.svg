@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="380" viewBox="0 0 880 380" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif">
+  <title>How DotNetDevMCP works</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#57606a"/>
+    </marker>
+  </defs>
+  <rect x="0.5" y="0.5" width="879" height="379" rx="14" fill="#ffffff" stroke="#d0d7de"/>
+
+  <!-- Agent -->
+  <rect x="30" y="120" width="180" height="140" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="120" y="152" text-anchor="middle" font-size="16" font-weight="600" fill="#1f2328">AI coding agent</text>
+  <text x="120" y="182" text-anchor="middle" font-size="13" fill="#57606a">Claude Code</text>
+  <text x="120" y="202" text-anchor="middle" font-size="13" fill="#57606a">VS Code / Copilot</text>
+  <text x="120" y="222" text-anchor="middle" font-size="13" fill="#57606a">Cursor, Claude Desktop</text>
+  <text x="120" y="242" text-anchor="middle" font-size="13" fill="#57606a">any MCP client</text>
+
+  <!-- Agent -> server -->
+  <line x1="212" y1="190" x2="278" y2="190" stroke="#57606a" stroke-width="2" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+  <text x="245" y="178" text-anchor="middle" font-size="12" fill="#57606a">MCP</text>
+  <text x="245" y="208" text-anchor="middle" font-size="11" fill="#57606a">stdio / HTTP</text>
+
+  <!-- Server -->
+  <rect x="282" y="30" width="330" height="320" rx="12" fill="#f3f0fd" stroke="#512bd4" stroke-width="1.5"/>
+  <text x="447" y="62" text-anchor="middle" font-size="18" font-weight="700" fill="#512bd4">DotNetDevMCP</text>
+  <text x="447" y="82" text-anchor="middle" font-size="12" fill="#57606a">dnx DotNetDevMCP  ·  37 tools by default</text>
+
+  <g font-size="13">
+    <rect x="302" y="98" width="290" height="34" rx="7" fill="#ffffff" stroke="#c9bff5"/>
+    <text x="316" y="120" fill="#1f2328"><tspan font-weight="600">Code intelligence</tspan><tspan fill="#57606a">  21 · Roslyn find, rename, edit</tspan></text>
+    <rect x="302" y="138" width="290" height="34" rx="7" fill="#ffffff" stroke="#c9bff5"/>
+    <text x="316" y="160" fill="#1f2328"><tspan font-weight="600">Testing</tspan><tspan fill="#57606a">  3 · run, discover, affected tests</tspan></text>
+    <rect x="302" y="178" width="290" height="34" rx="7" fill="#ffffff" stroke="#c9bff5"/>
+    <text x="316" y="200" fill="#1f2328"><tspan font-weight="600">Build</tspan><tspan fill="#57606a">  4 · build, restore, clean</tspan></text>
+    <rect x="302" y="218" width="290" height="34" rx="7" fill="#ffffff" stroke="#c9bff5"/>
+    <text x="316" y="240" fill="#1f2328"><tspan font-weight="600">Analysis</tspan><tspan fill="#57606a">  5 · dependencies, quality</tspan></text>
+    <rect x="302" y="258" width="290" height="34" rx="7" fill="#ffffff" stroke="#c9bff5"/>
+    <text x="316" y="280" fill="#1f2328"><tspan font-weight="600">Orchestration</tspan><tspan fill="#57606a">  4 · parallel runs, DAG workflows</tspan></text>
+    <rect x="302" y="298" width="290" height="34" rx="7" fill="#ffffff" stroke="#8c959f" stroke-dasharray="5 4"/>
+    <text x="316" y="320" fill="#57606a"><tspan font-weight="600">Git 10 · Monitoring 6</tspan><tspan>  opt-in: --enable</tspan></text>
+  </g>
+
+  <!-- Server -> solution -->
+  <line x1="614" y1="130" x2="678" y2="118" stroke="#57606a" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="614" y1="200" x2="678" y2="200" stroke="#57606a" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="614" y1="310" x2="678" y2="284" stroke="#8c959f" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+
+  <!-- Solution side -->
+  <rect x="682" y="76" width="170" height="82" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="767" y="104" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2328">Roslyn workspace</text>
+  <text x="767" y="124" text-anchor="middle" font-size="12" fill="#57606a">your .sln / .slnx</text>
+  <text x="767" y="142" text-anchor="middle" font-size="12" fill="#57606a">symbols, references</text>
+
+  <rect x="682" y="168" width="170" height="82" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="767" y="196" text-anchor="middle" font-size="14" font-weight="600" fill="#1f2328">dotnet CLI</text>
+  <text x="767" y="216" text-anchor="middle" font-size="12" fill="#57606a">build · test (VSTest</text>
+  <text x="767" y="234" text-anchor="middle" font-size="12" fill="#57606a">or Testing Platform)</text>
+
+  <rect x="682" y="260" width="170" height="52" rx="10" fill="#ffffff" stroke="#8c959f" stroke-dasharray="5 4"/>
+  <text x="767" y="291" text-anchor="middle" font-size="14" fill="#57606a">git (opt-in)</text>
+</svg>
