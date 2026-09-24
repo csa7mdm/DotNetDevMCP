@@ -24,3 +24,9 @@ Thumbs.db
 # Packages
 *.nupkg
 *.snupkg
+
+# Python bytecode and local benchmark working folders
+__pycache__/
+*.pyc
+benchmarks/polly/bench/
+benchmarks/polly/feed/
