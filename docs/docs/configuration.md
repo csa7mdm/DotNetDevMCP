@@ -1,6 +1,6 @@
 ---
-title: Configuration
-description: Server options go after `--` in a `dnx` command, or straight after `dotnetdevmcp` for a global install:
+title: "Configuration"
+description: "Server options go after `--` in a `dnx` command, or straight after `dotnetdevmcp` for a global install:"
 ---
 # Configuration
 

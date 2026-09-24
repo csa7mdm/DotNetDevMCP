@@ -1,6 +1,6 @@
 ---
-title: Architecture
-description: A map for contributors.
+title: "Architecture"
+description: "A map for contributors."
 ---
 # Architecture
 

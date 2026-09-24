@@ -1,6 +1,6 @@
 ---
-title: Contributing
-description: Contributions of every size are welcome, and not only code.
+title: "Contributing"
+description: "Contributions of every size are welcome, and not only code."
 ---
 # Contributing
 

@@ -1,6 +1,6 @@
 ---
-title: Troubleshooting
-description: Start the server with `--log-level Debug --log-directory <dir>` to get logs for any of these.
+title: "Troubleshooting"
+description: "Start the server with `--log-level Debug --log-directory <dir>` to get logs for any of these."
 ---
 # Troubleshooting
 

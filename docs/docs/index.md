@@ -1,6 +1,6 @@
 ---
-title: DotNetDevMCP
-description: DotNetDevMCP is an [MCP](https://modelcontextprotocol.
+title: "DotNetDevMCP"
+description: "DotNetDevMCP is an [MCP](https://modelcontextprotocol."
 ---
 # DotNetDevMCP
 

@@ -1,6 +1,6 @@
 ---
-title: Security
-description: DotNetDevMCP is a local developer tool: it runs as you, for an AI agent you chose to trust with your code.
+title: "Security"
+description: "DotNetDevMCP is a local developer tool: it runs as you, for an AI agent you chose to trust with your code."
 ---
 # Security
 

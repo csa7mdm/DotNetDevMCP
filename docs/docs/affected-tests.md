@@ -1,6 +1,6 @@
 ---
-title: Affected tests
-description: `dotnet_test_affected` answers "which tests can my change break?
+title: "Affected tests"
+description: "`dotnet_test_affected` answers \"which tests can my change break?"
 ---
 # Affected tests
 

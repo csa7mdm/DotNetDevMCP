@@ -1,6 +1,6 @@
 ---
-title: Tools Reference
-description: Generated from the server's own `tools/list` (0.
+title: "Tools Reference"
+description: "Generated from the server's own `tools/list` (0."
 ---
 # Tools reference
 

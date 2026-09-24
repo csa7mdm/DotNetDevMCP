@@ -1,6 +1,6 @@
 ---
-title: Tutorial
-description: This walks through one realistic session on your own solution: understand some code, change it safely, and check the
+title: "Tutorial"
+description: "This walks through one realistic session on your own solution: understand some code, change it safely, and check the"
 ---
 # Tutorial: your first session
 
