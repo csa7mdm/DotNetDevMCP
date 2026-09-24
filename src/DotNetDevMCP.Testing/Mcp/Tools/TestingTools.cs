@@ -92,52 +92,118 @@ public static class TestingTools
         var list = affected.Select(a => new { a.FullyQualifiedName, Project = Path.GetFileNameWithoutExtension(a.ProjectPath), a.Via });
 
         var selectedFraction = selection.TotalTestMethods > 0 ? (double)affected.Count / selection.TotalTestMethods : 0;
-        // Two independent reasons to give up on filtering and just run everything: the walk didn't finish (unsafe to trust a
-        // partial set), or it did finish but the selection is big enough that running it filtered is likely slower anyway
-        // (measured on Polly: ~4% of tests ran 3.3x faster filtered, ~23% was slower than the whole suite).
-        var note = !selection.Complete
-            ? $"Selection stopped after {maxSelectionSeconds}s and {selection.SymbolsSearched} symbols: this change reaches too much code to trace cheaply. The tests listed are a partial set; a run executes the whole solution instead."
-            : selectedFraction > maxSelectedFraction
-                ? $"Selected {affected.Count} of {selection.TotalTestMethods} test methods ({selectedFraction:P0}), above the {maxSelectedFraction:P0} threshold: a selection this large is likely slower filtered than running the whole solution. Running the whole solution instead."
-                : null;
-        var ranWholeSolution = note is not null;
-
-        if (dryRun || (selection.Complete && affected.Count == 0))
+        // Two independent reasons to give up on filtering: the walk didn't finish (unsafe to trust a partial set), or it did
+        // finish but the selection is big enough that running it filtered is likely slower anyway (measured on Polly: ~4% of
+        // tests ran 3.3x faster filtered, ~23% was slower than the whole suite). Either way, fall back to running whole test
+        // projects picked from the (cheap) project reference graph instead of jumping straight to the whole solution - a
+        // change to one library rarely reaches every test project (measured on Polly: 7 test projects, usually 1-2 affected).
+        string? note;
+        AffectedRunScope scope;
+        IReadOnlyList<string> projectsToRun = [];
+        IReadOnlyList<string> allTestProjects = [];
+        if (selection.Complete && selectedFraction <= maxSelectedFraction)
         {
-            return new { Success = true, ChangedFiles = files, SelectionComplete = selection.Complete, selection.SymbolsSearched, selection.TotalTestMethods, Note = note, RanWholeSolution = ranWholeSolution, AffectedTests = list, Ran = false };
-        }
-
-        TestRunSummary summary;
-        if (ranWholeSolution)
-        {
-            // Incomplete selection, or a selection too large to be worth filtering: the safe/fast answer is everything. One solution-wide run, which builds it once.
-            summary = await runner.RunAsync(solutions.CurrentSolution.FilePath!, null, null, noBuild, framework, cancellationToken, timeoutSeconds);
+            scope = AffectedRunScope.Selection;
+            note = null;
         }
         else
         {
-            var byProject = affected.GroupBy(a => a.ProjectPath).ToList();
+            var reason = !selection.Complete
+                ? $"Selection stopped after {maxSelectionSeconds}s and {selection.SymbolsSearched} symbols: this change reaches too much code to trace cheaply."
+                : $"Selected {affected.Count} of {selection.TotalTestMethods} test methods ({selectedFraction:P0}), above the {maxSelectedFraction:P0} threshold: a selection this large is likely slower filtered than running the whole solution.";
 
-            // Build one project at a time: test projects share references, and parallel builds of the same outputs collide on file locks.
-            if (!noBuild)
+            var reachableProjects = AffectedTestFinder.FindAffectedTestProjects(solutions.CurrentSolution, files);
+            allTestProjects = AffectedTestFinder.AllTestProjectFilePaths(solutions.CurrentSolution);
+
+            if (reachableProjects.Count == 0 || reachableProjects.Count >= allTestProjects.Count)
             {
-                foreach (var project in byProject.Select(g => g.Key))
-                {
-                    var tfm = string.IsNullOrWhiteSpace(framework) ? "" : $" --framework {framework}";
-                    var (exit, stdout, stderr, _) = await TestRunner.RunDotnetAsync($"build \"{project}\" -nologo{tfm}", cancellationToken, TestRunner.DirectoryOf(project));
-                    if (exit != 0)
-                    {
-                        return new { Success = false, ChangedFiles = files, AffectedTests = list, Ran = false, Error = $"Build failed for {Path.GetFileName(project)}:\n{BuildErrors(stdout + stderr)}" };
-                    }
-                }
+                scope = AffectedRunScope.Solution;
+                note = $"{reason} Every test project in the solution is reachable from the change (or none could be resolved to a project); running the whole solution instead.";
             }
+            else
+            {
+                scope = AffectedRunScope.Projects;
+                projectsToRun = reachableProjects;
+                var names = string.Join(", ", reachableProjects.Select(Path.GetFileName));
+                note = $"{reason} Running the test projects reachable from the change via project references instead: {names}. " +
+                    "This is a superset of the affected tests (some of their other tests may also run); a test project that " +
+                    "depends on the changed code only through a NuGet package reference, with no ProjectReference, is not " +
+                    "detected by this fallback and may be missed.";
+            }
+        }
+        var ranWholeSolution = scope == AffectedRunScope.Solution; // kept for compatibility; true only when the whole solution ran.
 
-            // Then one dotnet test per affected project, in parallel.
-            var runs = await Task.WhenAll(byProject.Select(g => runner.RunAsync(g.Key, null, g.Select(a => a.FullyQualifiedName).ToList(), noBuild: true, framework, cancellationToken, timeoutSeconds)));
-            summary = TestRunSummary.Merge(runs);
+        if (dryRun || (selection.Complete && affected.Count == 0))
+        {
+            var plannedProjects = scope switch
+            {
+                AffectedRunScope.Projects => projectsToRun,
+                AffectedRunScope.Solution => allTestProjects,
+                _ => (IReadOnlyList<string>)[],
+            };
+            return new { Success = true, ChangedFiles = files, SelectionComplete = selection.Complete, selection.SymbolsSearched, selection.TotalTestMethods, Note = note, RanWholeSolution = ranWholeSolution, RanScope = ScopeName(scope), TestProjectsRun = plannedProjects.Select(Path.GetFileName), AffectedTests = list, Ran = false };
         }
 
-        return new { Success = summary.Success, ChangedFiles = files, SelectionComplete = selection.Complete, selection.SymbolsSearched, selection.TotalTestMethods, Note = note, RanWholeSolution = ranWholeSolution, AffectedTests = list, Ran = true, Run = Shape(summary) };
+        TestRunSummary summary;
+        IReadOnlyList<string> testProjectsRun;
+        switch (scope)
+        {
+            case AffectedRunScope.Solution:
+                // Incomplete/too-large selection and the project-reachability fallback still covers everything: the
+                // safe/fast answer is everything. One solution-wide run, which builds it once.
+                summary = await runner.RunAsync(solutions.CurrentSolution.FilePath!, null, null, noBuild, framework, cancellationToken, timeoutSeconds);
+                testProjectsRun = allTestProjects;
+                break;
+
+            case AffectedRunScope.Projects:
+                // Project-level fallback: build the reachable test projects one at a time (they share references; parallel
+                // builds of the same outputs collide on file locks), then run all of them in parallel with no name filter -
+                // every test in each of these projects runs, not just the ones the symbol walk would have picked.
+                if (!noBuild)
+                {
+                    foreach (var project in projectsToRun)
+                    {
+                        var tfm = string.IsNullOrWhiteSpace(framework) ? "" : $" --framework {framework}";
+                        var (exit, stdout, stderr, _) = await TestRunner.RunDotnetAsync($"build \"{project}\" -nologo{tfm}", cancellationToken, TestRunner.DirectoryOf(project));
+                        if (exit != 0)
+                        {
+                            return new { Success = false, ChangedFiles = files, AffectedTests = list, Ran = false, Error = $"Build failed for {Path.GetFileName(project)}:\n{BuildErrors(stdout + stderr)}" };
+                        }
+                    }
+                }
+                var projectRuns = await Task.WhenAll(projectsToRun.Select(p => runner.RunAsync(p, null, null, noBuild: true, framework, cancellationToken, timeoutSeconds)));
+                summary = TestRunSummary.Merge(projectRuns);
+                testProjectsRun = projectsToRun;
+                break;
+
+            default: // Selection
+                var byProject = affected.GroupBy(a => a.ProjectPath).ToList();
+
+                // Build one project at a time: test projects share references, and parallel builds of the same outputs collide on file locks.
+                if (!noBuild)
+                {
+                    foreach (var project in byProject.Select(g => g.Key))
+                    {
+                        var tfm = string.IsNullOrWhiteSpace(framework) ? "" : $" --framework {framework}";
+                        var (exit, stdout, stderr, _) = await TestRunner.RunDotnetAsync($"build \"{project}\" -nologo{tfm}", cancellationToken, TestRunner.DirectoryOf(project));
+                        if (exit != 0)
+                        {
+                            return new { Success = false, ChangedFiles = files, AffectedTests = list, Ran = false, Error = $"Build failed for {Path.GetFileName(project)}:\n{BuildErrors(stdout + stderr)}" };
+                        }
+                    }
+                }
+
+                // Then one dotnet test per affected project, in parallel.
+                var runs = await Task.WhenAll(byProject.Select(g => runner.RunAsync(g.Key, null, g.Select(a => a.FullyQualifiedName).ToList(), noBuild: true, framework, cancellationToken, timeoutSeconds)));
+                summary = TestRunSummary.Merge(runs);
+                testProjectsRun = byProject.Select(g => g.Key).ToList();
+                break;
+        }
+
+        return new { Success = summary.Success, ChangedFiles = files, SelectionComplete = selection.Complete, selection.SymbolsSearched, selection.TotalTestMethods, Note = note, RanWholeSolution = ranWholeSolution, RanScope = ScopeName(scope), TestProjectsRun = testProjectsRun.Select(Path.GetFileName), AffectedTests = list, Ran = true, Run = Shape(summary) };
     }
+
+    private static string ScopeName(AffectedRunScope scope) => scope.ToString().ToLowerInvariant();
 
     private static string BuildErrors(string output)
     {
