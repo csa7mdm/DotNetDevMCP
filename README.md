@@ -146,7 +146,8 @@ DotNetDevMCP runs as you, for an agent you trust with your code. `dotnet build` 
 contains, so a malicious test or `.csproj` runs with your privileges, exactly as it would in your terminal; the server adds no
 sandbox. What it does guarantee: tool arguments can't smuggle extra options into `dotnet` or `git`, Roslyn edits stay inside the
 solution directory, and `--clean-env` keeps secrets in environment variables away from child processes. For code you don't
-trust, run the agent and the server in a container with no credentials. Don't expose `--http` beyond localhost. Details:
+trust, run the agent and the server together in a container or VM with no credentials; the image below contains only the
+server, which already keeps builds and tests off your machine. Don't expose `--http` beyond localhost. Details:
 [SECURITY.md](https://github.com/csa7mdm/DotNetDevMCP/blob/main/SECURITY.md#security-model).
 
 ### Run it in a container
