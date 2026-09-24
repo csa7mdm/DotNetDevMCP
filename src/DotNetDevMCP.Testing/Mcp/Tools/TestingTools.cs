@@ -42,9 +42,10 @@ public static class TestingTools
         [Description("Exact fully qualified test names to run (Namespace.Class.Method). Combined with filter if both given.")] string[]? testNames = null,
         [Description("Skip the build. Only when nothing changed since the last build.")] bool noBuild = false,
         [Description("Run one target framework only, e.g. net10.0. Default: every framework the projects target.")] string? framework = null,
+        [Description("Kill the run and fail it past this many seconds. A run must always return, even if a test hangs (e.g. an injected fault causing a deadlock). Default 600.")] int timeoutSeconds = 600,
         CancellationToken cancellationToken = default)
     {
-        var summary = await runner.RunAsync(path, filter, testNames, noBuild, framework, cancellationToken);
+        var summary = await runner.RunAsync(path, filter, testNames, noBuild, framework, cancellationToken, timeoutSeconds);
         logger.LogInformation("dotnet_test_run {Path}: {Passed}/{Total} passed in {Sec:F1}s", path, summary.PassedTests, summary.TotalTests, summary.Duration.TotalSeconds);
         return Shape(summary);
     }
@@ -63,6 +64,8 @@ public static class TestingTools
         [Description("Skip building the affected test projects. Only when nothing changed since the last build.")] bool noBuild = false,
         [Description("Seconds allowed for tracing. Past it the change reaches too much code for selection to beat running everything, so the whole solution runs instead. Default 10.")] int maxSelectionSeconds = 10,
         [Description("Run one target framework only, e.g. net10.0: much faster for multi-targeted test projects. Default: every framework.")] string? framework = null,
+        [Description("Above this share of all test methods, run the whole solution instead of the filtered selection. Measured on Polly: a selection of 4% of tests ran 3.3x faster than the whole suite, but 23% was slower than just running everything (filtered runs plus per-project overhead don't pay for themselves past a point). Default 0.2.")] double maxSelectedFraction = 0.2,
+        [Description("Kill the run and fail it past this many seconds. A run must always return, even if a test hangs. Default 600.")] int timeoutSeconds = 600,
         CancellationToken cancellationToken = default)
     {
         if (!solutions.IsSolutionLoaded)
@@ -87,18 +90,28 @@ public static class TestingTools
             files.Length, affected.Count, selection.SymbolsSearched, selection.Complete, sw.ElapsedMilliseconds);
 
         var list = affected.Select(a => new { a.FullyQualifiedName, Project = Path.GetFileNameWithoutExtension(a.ProjectPath), a.Via });
-        var note = selection.Complete ? null
-            : $"Selection stopped after {maxSelectionSeconds}s and {selection.SymbolsSearched} symbols: this change reaches too much code to trace cheaply. The tests listed are a partial set; a run executes the whole solution instead.";
+
+        var selectedFraction = selection.TotalTestMethods > 0 ? (double)affected.Count / selection.TotalTestMethods : 0;
+        // Two independent reasons to give up on filtering and just run everything: the walk didn't finish (unsafe to trust a
+        // partial set), or it did finish but the selection is big enough that running it filtered is likely slower anyway
+        // (measured on Polly: ~4% of tests ran 3.3x faster filtered, ~23% was slower than the whole suite).
+        var note = !selection.Complete
+            ? $"Selection stopped after {maxSelectionSeconds}s and {selection.SymbolsSearched} symbols: this change reaches too much code to trace cheaply. The tests listed are a partial set; a run executes the whole solution instead."
+            : selectedFraction > maxSelectedFraction
+                ? $"Selected {affected.Count} of {selection.TotalTestMethods} test methods ({selectedFraction:P0}), above the {maxSelectedFraction:P0} threshold: a selection this large is likely slower filtered than running the whole solution. Running the whole solution instead."
+                : null;
+        var ranWholeSolution = note is not null;
+
         if (dryRun || (selection.Complete && affected.Count == 0))
         {
-            return new { Success = true, ChangedFiles = files, SelectionComplete = selection.Complete, selection.SymbolsSearched, Note = note, AffectedTests = list, Ran = false };
+            return new { Success = true, ChangedFiles = files, SelectionComplete = selection.Complete, selection.SymbolsSearched, selection.TotalTestMethods, Note = note, RanWholeSolution = ranWholeSolution, AffectedTests = list, Ran = false };
         }
 
         TestRunSummary summary;
-        if (!selection.Complete)
+        if (ranWholeSolution)
         {
-            // Incomplete selection: the only safe answer is everything. One solution-wide run, which builds it once.
-            summary = await runner.RunAsync(solutions.CurrentSolution.FilePath!, null, null, noBuild, framework, cancellationToken);
+            // Incomplete selection, or a selection too large to be worth filtering: the safe/fast answer is everything. One solution-wide run, which builds it once.
+            summary = await runner.RunAsync(solutions.CurrentSolution.FilePath!, null, null, noBuild, framework, cancellationToken, timeoutSeconds);
         }
         else
         {
@@ -110,7 +123,7 @@ public static class TestingTools
                 foreach (var project in byProject.Select(g => g.Key))
                 {
                     var tfm = string.IsNullOrWhiteSpace(framework) ? "" : $" --framework {framework}";
-                    var (exit, stdout, stderr) = await TestRunner.RunDotnetAsync($"build \"{project}\" -nologo{tfm}", cancellationToken, TestRunner.DirectoryOf(project));
+                    var (exit, stdout, stderr, _) = await TestRunner.RunDotnetAsync($"build \"{project}\" -nologo{tfm}", cancellationToken, TestRunner.DirectoryOf(project));
                     if (exit != 0)
                     {
                         return new { Success = false, ChangedFiles = files, AffectedTests = list, Ran = false, Error = $"Build failed for {Path.GetFileName(project)}:\n{BuildErrors(stdout + stderr)}" };
@@ -119,11 +132,11 @@ public static class TestingTools
             }
 
             // Then one dotnet test per affected project, in parallel.
-            var runs = await Task.WhenAll(byProject.Select(g => runner.RunAsync(g.Key, null, g.Select(a => a.FullyQualifiedName).ToList(), noBuild: true, framework, cancellationToken)));
+            var runs = await Task.WhenAll(byProject.Select(g => runner.RunAsync(g.Key, null, g.Select(a => a.FullyQualifiedName).ToList(), noBuild: true, framework, cancellationToken, timeoutSeconds)));
             summary = TestRunSummary.Merge(runs);
         }
 
-        return new { Success = summary.Success, ChangedFiles = files, SelectionComplete = selection.Complete, selection.SymbolsSearched, Note = note, AffectedTests = list, Ran = true, Run = Shape(summary) };
+        return new { Success = summary.Success, ChangedFiles = files, SelectionComplete = selection.Complete, selection.SymbolsSearched, selection.TotalTestMethods, Note = note, RanWholeSolution = ranWholeSolution, AffectedTests = list, Ran = true, Run = Shape(summary) };
     }
 
     private static string BuildErrors(string output)
@@ -147,9 +160,9 @@ public static class TestingTools
     private static async Task<string[]> GitChangedFilesAsync(string repoDir, string? gitBase, CancellationToken ct)
     {
         var args = gitBase is null ? "status --porcelain --untracked-files=all" : $"diff --name-only {gitBase}";
-        var (exit, output, err) = await TestRunner.RunProcessAsync("git", args, ct, repoDir);
+        var (exit, output, err, _) = await TestRunner.RunProcessAsync("git", args, ct, repoDir);
         if (exit != 0) throw new InvalidOperationException($"git {args} failed: {err.Trim()}");
-        var (_, root, _) = await TestRunner.RunProcessAsync("git", "rev-parse --show-toplevel", ct, repoDir);
+        var (_, root, _, _) = await TestRunner.RunProcessAsync("git", "rev-parse --show-toplevel", ct, repoDir);
         root = root.Trim().Length == 0 ? repoDir : root.Trim();
         return output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(l => gitBase is null ? l[3..].Trim() : l.Trim())     // porcelain lines are "XY path"

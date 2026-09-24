@@ -57,5 +57,7 @@ public record AffectedTest(string FullyQualifiedName, string ProjectPath, string
 /// <summary>
 /// Tests reached from a change. Complete = false means the reference walk ran out of its time budget: the change reaches too much
 /// code to trace cheaply, Tests is a partial set, and every test should run instead.
+/// TotalTestMethods is the size of the whole search scope (syntactic count), used to decide whether a selection is a large
+/// enough share of everything that running it filtered is likely slower than just running the whole solution.
 /// </summary>
-public record AffectedTestSelection(IReadOnlyList<AffectedTest> Tests, bool Complete, int SymbolsSearched);
+public record AffectedTestSelection(IReadOnlyList<AffectedTest> Tests, bool Complete, int SymbolsSearched, int TotalTestMethods);

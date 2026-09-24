@@ -9,7 +9,7 @@ An [MCP](https://modelcontextprotocol.io) server that gives AI coding agents rea
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
 
-Agents working on .NET code usually get by with `grep` and shelling out to `dotnet`. That means they read files instead of symbols, edit text instead of syntax trees, and run one command at a time. DotNetDevMCP replaces that with 53 tools that use the compiler's view of your solution and can run builds, tests and analysis in parallel.
+Agents working on .NET code usually get by with `grep` and shelling out to `dotnet`. That means they read files instead of symbols, edit text instead of syntax trees, and run one command at a time. DotNetDevMCP replaces that with 37 tools by default (53 with the optional groups below enabled) that use the compiler's view of your solution and can run builds, tests and analysis in parallel.
 
 ## Install
 
@@ -52,6 +52,8 @@ claude mcp add dotnetdevmcp -- dnx DotNetDevMCP --yes
 
 Pass `--load-solution <path>` to have Roslyn load your solution at startup, or let the agent call `SharpTool_LoadSolution` when it needs to. `--http --port 3001` serves Streamable HTTP instead of stdio. `dotnetdevmcp --help` lists everything.
 
+Git and Monitoring tools (see the table below) are off by default - a shell an agent already has covers them, and every registered tool costs context tokens in every session. Pass `--enable git,monitoring` (comma-separated and/or repeated, e.g. `--enable git --enable monitoring`) to turn either or both on.
+
 By default, the Roslyn edit tools (`SharpTool_RenameSymbol`, `OverwriteMember`, `AddMember`, `MoveMember`, `FindAndReplace`, `CreateRoslynDocument`, `OverwriteRoslynDocument`, `ManageUsings`, `ManageAttributes`) never touch git - they apply changes to disk and return the usual compile-check output, nothing else. Pass `--git-commit-edits` to opt into the old behavior: each edit creates a `sharptools/<timestamp>` branch (if you aren't already on one) and commits the change, which is also what `SharpTool_Undo` needs in order to revert. Without the flag, `SharpTool_Undo` returns an explanatory error instead of failing obscurely. (`--disable-git` still exists but is a no-op now that git integration is opt-in by default.)
 
 ## What the agent gets
@@ -60,11 +62,11 @@ By default, the Roslyn edit tools (`SharpTool_RenameSymbol`, `OverwriteMember`, 
 |---|---|---|
 | Code intelligence (Roslyn) | 21 | Load a solution; search and view definitions; find references and implementations; add, overwrite, move and rename members; manage usings and attributes; find-and-replace with syntax awareness; complexity analysis; undo. Forked from [SharpTools](https://github.com/kooshi/SharpToolsMCP). |
 | Testing | 3 | `dotnet_test_run` (one `dotnet test` per project or solution, TRX parsed into per-test results with messages and stack traces), `dotnet_test_discover`, and `dotnet_test_affected`: Roslyn walks references from your changed files to the test methods that reach them, and runs only those. |
-| Build | 5 | `dotnet build`, `restore`, `clean`, build with MSBuild properties, scan for outdated packages. Structured error/warning output. |
-| Analysis | 6 | Project dependency graph, circular-dependency detection, quality metrics, health check. |
-| Git | 10 | Status, branches, checkout, stage, commit, diff, log, push, pull. |
+| Build | 4 | `dotnet build`, `restore`, `clean`, build with MSBuild properties. Structured error/warning output. |
+| Analysis | 5 | Project dependency graph, circular-dependency detection, quality metrics, outdated-package scan. |
 | Orchestration | 4 | `orchestrate_parallel` runs any of the server's own tools concurrently; `execute_workflow` runs them as a DAG. Resource limits and metrics. |
-| Monitoring | 4 | Process performance metrics, GC stats, resource utilization, profiling sessions. |
+| Git *(opt-in)* | 10 | Status, branches, checkout, stage, commit, diff, log, push, pull. Enable with `--enable git`. |
+| Monitoring *(opt-in)* | 6 | Process performance metrics, GC stats, resource utilization, health check, profiling sessions. Enable with `--enable monitoring`. |
 
 Things you can say to an agent with this server attached:
 
@@ -117,7 +119,7 @@ Measured with BenchmarkDotNet on an i7-10750H, .NET 10.0.9. The orchestration be
 
 After an edit, the agent usually reruns the whole suite. `dotnet_test_affected` asks Roslyn instead: take the symbols declared in the changed files, follow references (up to `maxDepth` hops, default 8) until you land in a method with `[Fact]`, `[Theory]`, `[Test]`, `[TestCase]` or `[TestMethod]`, then run exactly those. Changed files default to the git working tree, or `gitBase: "main"` for a branch. `dryRun: true` lists the tests without running them; `framework: "net10.0"` runs one target framework of multi-targeted test projects.
 
-The walk has a time budget (`maxSelectionSeconds`, default 10). A change to code that everything depends on reaches too much to trace cheaply; then the whole solution runs instead and the response says so (`selectionComplete: false`). You never get a silently partial selection. Works with VSTest and with Microsoft.Testing.Platform (`"test": { "runner": "Microsoft.Testing.Platform" }` in global.json).
+The walk has a time budget (`maxSelectionSeconds`, default 10). A change to code that everything depends on reaches too much to trace cheaply; then the whole solution runs instead and the response says so (`selectionComplete: false`). The same happens when the selection is more than 20% of all tests (`maxSelectedFraction`), where a filtered run is no faster. You never get a silently partial selection. Runs are killed after `timeoutSeconds` (default 600) so a hanging test cannot hang the agent; the response names the test modules that never finished. `maxDepth: 3` narrows more changes but misses more tests. Works with VSTest and with Microsoft.Testing.Platform (`"test": { "runner": "Microsoft.Testing.Platform" }` in global.json).
 
 On this repository, editing `ConcurrentExecutor.cs` selects 22 of 44 tests (the `ConcurrentExecutorTests` plus the `OrchestrationServiceTests` that reach it through `OrchestrationService`). Measured through the MCP tool, build included, i7-10750H:
 
@@ -127,7 +129,7 @@ On this repository, editing `ConcurrentExecutor.cs` selects 22 of 44 tests (the 
 | `dotnet_test_run` | 44 | 8.3 s |
 | `dotnet_test_affected` (change to `ConcurrentExecutor.cs`) | 22 | 6.6 s |
 
-The suite here is small, so the saving is small. On a real library the picture is clearer: [benchmarks/polly](benchmarks/polly/README.md) replays 40 Polly commits and injects faults into its code. A one-file change ran its 5 affected tests in 4.6 s against 33 s for the net10.0 suite, and the selections included 111 of the 112 tests the injected faults broke (the miss builds its object through reflection). Changes that reach hundreds of tests gain nothing, and 18 of 40 commits fell back to the full suite. `dryRun: true` shows what it picked and why (`via`).
+The suite here is small, so the saving is small. On a real library the picture is clearer: [benchmarks/polly](benchmarks/polly/README.md) replays 40 Polly commits and injects faults into its code. A one-file change ran its 5 affected tests in 4.6 s against 33 s for the net10.0 suite, and the selections included 111 of the 112 tests the injected faults broke (the miss builds its object through reflection). Changes that reach hundreds of tests gain nothing: of the last 40 commits, 16 ran a filtered selection and 24 ran the full suite. The first selection of a session on busy code is slower (Roslyn binds the files it touches, then caches them). `dryRun: true` shows what it picked and why (`via`).
 
 ## Build from source
 

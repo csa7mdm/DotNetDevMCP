@@ -21,6 +21,13 @@
           "description": "Path to a .sln to load on startup (optional)",
           "isRequired": false,
           "valueHint": "path/to/Solution.sln"
+        },
+        {
+          "type": "named",
+          "name": "--enable",
+          "description": "Enable optional tool groups, off by default: 'git' and 'monitoring'. Comma-separated and/or repeated, e.g. \"git,monitoring\" (optional)",
+          "isRequired": false,
+          "valueHint": "git,monitoring"
         }
       ]
     }

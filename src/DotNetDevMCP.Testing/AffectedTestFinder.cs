@@ -42,6 +42,8 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
         // per TFM and the repeats compound per hop. Search one variant of each test project plus the projects it references.
         var scope = SearchScope(solution);
         var documents = scope.SelectMany(p => p.Documents).ToImmutableHashSet<Document>();
+        // Denominator for "is this selection worth filtering for": syntax-only and outside the search budget, so it can't blow it.
+        var totalTestMethods = await CountTestMethodsAsync(scope.Where(IsTestProject), callerCt);
 
         var found = new Dictionary<string, AffectedTest>(StringComparer.Ordinal);
         var seen = new HashSet<string>(StringComparer.Ordinal); // by documentation id: the same method from another TFM is the same method
@@ -118,7 +120,36 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
         }
 
         var tests = found.Values.OrderBy(t => t.ProjectPath).ThenBy(t => t.FullyQualifiedName).ToList();
-        return new AffectedTestSelection(tests, complete, searched);
+        return new AffectedTestSelection(tests, complete, searched, totalTestMethods);
+    }
+
+    /// <summary>
+    /// Total test methods across the search scope's test projects, counted syntactically (no semantic model, no reference
+    /// walk) so it's cheap regardless of solution size: one pass over each test project's syntax trees.
+    /// </summary>
+    private static async Task<int> CountTestMethodsAsync(IEnumerable<Project> testProjects, CancellationToken ct)
+    {
+        var total = 0;
+        foreach (var project in testProjects)
+        {
+            foreach (var doc in project.Documents)
+            {
+                if (await doc.GetSyntaxRootAsync(ct) is not { } root) continue;
+                total += root.DescendantNodes().OfType<MethodDeclarationSyntax>().Count(HasTestAttributeSyntax);
+            }
+        }
+        return total;
+    }
+
+    private static bool HasTestAttributeSyntax(MethodDeclarationSyntax method) =>
+        method.AttributeLists.SelectMany(al => al.Attributes).Any(a => TestAttributes.Contains(AttributeShortName(a.Name.ToString())));
+
+    /// <summary>"Xunit.Fact" or "FactAttribute" -&gt; "Fact". Syntax-only stand-in for <see cref="IsTestMethod"/>, which needs a symbol.</summary>
+    private static string AttributeShortName(string name)
+    {
+        var dot = name.LastIndexOf('.');
+        var simple = dot >= 0 ? name[(dot + 1)..] : name;
+        return simple.EndsWith("Attribute", StringComparison.Ordinal) ? simple[..^9] : simple;
     }
 
     /// <summary>

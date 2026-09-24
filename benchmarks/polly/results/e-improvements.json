@@ -1,0 +1,68 @@
+[
+ {
+  "check": "tools by default",
+  "count": 37
+ },
+ {
+  "check": "first selection, 0s after load",
+  "file": "IAsyncPolicyPolicyWrapExtensions.cs",
+  "load_s": 38.3,
+  "seconds": 10.1,
+  "complete": false,
+  "selected": 309
+ },
+ {
+  "check": "first selection, 0s after load",
+  "file": "ResiliencePipeline.SyncT.cs",
+  "load_s": 31.6,
+  "seconds": 10.0,
+  "complete": false,
+  "selected": 173
+ },
+ {
+  "check": "first selection, 90s after load",
+  "file": "IAsyncPolicyPolicyWrapExtensions.cs",
+  "load_s": 32.6,
+  "seconds": 10.1,
+  "complete": false,
+  "selected": 650
+ },
+ {
+  "check": "first selection, 90s after load",
+  "file": "ResiliencePipeline.SyncT.cs",
+  "load_s": 27.7,
+  "seconds": 10.1,
+  "complete": false,
+  "selected": 534
+ },
+ {
+  "check": "run net10.0",
+  "label": "small",
+  "seconds": 7.6,
+  "selected": 5,
+  "total_methods": 2631,
+  "ran_whole_solution": false,
+  "executed": 5,
+  "failed": 0
+ },
+ {
+  "check": "run net10.0",
+  "label": "medium",
+  "seconds": 43.3,
+  "selected": 686,
+  "total_methods": 2631,
+  "ran_whole_solution": true,
+  "executed": 3065,
+  "failed": 1
+ },
+ {
+  "check": "run net10.0",
+  "label": "large",
+  "seconds": 46.3,
+  "selected": 61,
+  "total_methods": 2631,
+  "ran_whole_solution": true,
+  "executed": 3065,
+  "failed": 0
+ }
+]

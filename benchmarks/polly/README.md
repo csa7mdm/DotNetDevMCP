@@ -12,37 +12,54 @@ These numbers are from one machine and one repository. They show how the tool be
 ## What `dotnet_test_affected` does
 
 It walks Roslyn references from the symbols declared in the changed files until it reaches test methods, and runs only those.
-The walk is capped by time (default 10 s, `maxSelectionSeconds`). If it runs out, the change reaches too much code for selection
-to pay off, and the whole solution runs instead: the answer is then a superset, never a partial set.
+The whole solution runs instead in two cases: the walk runs out of its time budget (default 10 s, `maxSelectionSeconds`), or the
+selection is more than 20% of all test methods (`maxSelectedFraction`), where a filtered run is no faster. Either way the answer
+is a superset, never a partial set, and the response says which happened.
 
 ## A. How many tests does a real change need? ([bench_a.py](bench_a.py))
 
 Replay of Polly's last 40 commits that touched `src/**/*.cs`, selection only (`dryRun`).
 
-| Setting | Complete selections | Median test methods selected | Median / max selection time |
-|---|---|---|---|
-| Shipped defaults (depth 8, 10 s) | 22 of 40 | 272 | 0.7 s / 6.1 s |
-| Depth 3, 20 s (earlier setting) | 27 of 40 | 19 | 0.2 s / 13.7 s |
+Polly has 2,631 test methods.
 
-The other commits fall back to the full suite. They are the broad ones: "Simplify code" (22 files), "Reduce async overhead"
-(40 files), SDK updates, and edits to core plumbing such as `ScheduledTaskExecutor` that everything depends on.
-Depth 8 selects more tests than depth 3; C shows why that is the right default.
+| Setting | Filtered run | Full suite: selection > 20% | Full suite: out of budget | Median methods when filtered |
+|---|---|---|---|---|
+| Shipped defaults (depth 8, 10 s) | **16 of 40** | 6 | 18 | 82 |
+| Depth 3, 20 s | 26 of 40 | 1 | 13 | 16 |
+
+The commits that run the full suite are the broad ones: "Simplify code" (22 files), "Reduce async overhead" (40 files), SDK
+updates, and edits to core plumbing such as `ScheduledTaskExecutor` that everything depends on. Depth 3 narrows more commits
+but misses about 10% of the tests a change breaks (C); depth 8 is the default because a test selector has to be safe first.
+Pass `maxDepth: 3` to trade that for speed.
 
 ## B. Wall clock ([bench_b.py](bench_b.py))
 
-Selection plus run, no build, second (warm) call; full suite measured the same session.
+Selection plus run, no build, warm call; the full suite measured in the same session. Absolute times moved a lot between sessions
+on this laptop (full net10.0 suite: 33.2 s in one, 48.1 s in another), so compare within a session.
+
+Session 1, depth 3 (before the 20% rule), [results/b-timing-depth3.json](results/b-timing-depth3.json):
 
 | Change | Methods selected | All TFMs | net10.0 only (`framework`) |
 |---|---|---|---|
 | Full suite | - | 49.4 s | 33.2 s |
-| 1 file, `FaultGenerator` | 5 | 16.8 s | **4.6 s** |
-| 3 files, cancellation propagation | 109 | 39.1 s | **10.0 s** |
-| 1 busy file, test-flakiness fix | 589 | 64.9 s | 40.5 s |
-| 40 files (falls back) | all | 70.0 s | 53.4 s |
+| 1 file, `FaultGenerator` | 5 | 16.8 s | **4.6 s** (7.2x) |
+| 3 files, cancellation propagation | 109 | 39.1 s | **10.0 s** (3.3x) |
+| 1 busy file, test-flakiness fix | 589 | 64.9 s | 40.5 s (slower) |
+| 40 files, out of budget | all | 70.0 s | 53.4 s |
 
-Selection pays off for small and medium changes, most of all when running one target framework: each selected test project
-otherwise starts a test host per TFM, and that fixed cost dominates small runs. For changes that reach hundreds of tests,
-filtered runs are no faster than running everything. A fallback costs its selection budget on top of the full run.
+Session 2, shipped 0.3.0 defaults, [results/b-timing.json](results/b-timing.json):
+
+| Change | Selection | All TFMs | net10.0 only |
+|---|---|---|---|
+| Full suite | - | 94.9 s | 48.1 s |
+| 1 file, `FaultGenerator` | 5 methods, filtered | 24.8 s | **5.1 s** (9.4x) |
+| 3 files, cancellation propagation | 686 methods (26%), whole solution | 65.6 s | 34.5 s |
+| 1 busy file, test-flakiness fix | out of budget, whole solution | 72.7 s | 42.8 s |
+| 40 files | out of budget, whole solution | 70.8 s | 42.6 s |
+
+Selection pays off for small changes, most of all with one target framework: each selected test project otherwise starts a
+test host per TFM, and that fixed cost dominates small runs. Big selections were slower filtered than the full suite in session 1;
+the 20% rule now runs the whole solution for them, so they cost about the same as not using selection at all.
 
 ## C. Is it safe? Fault injection ([bench_c.py](bench_c.py), [bench_c2.py](bench_c2.py))
 
@@ -74,21 +91,31 @@ Cold caches matter: the first selection of a session can hit the budget and fall
 
 | Symbol | Semantic references | `git grep -w` lines | Answer size, Roslyn / grep |
 |---|---|---|---|
-| `ResilienceContext.CancellationToken` | 137 | 1,354 | 12 KB / 202 KB |
-| `Outcome<TResult>.Exception` | 113 | 1,537 | 14 KB / 216 KB |
-| `TimeoutStrategyOptions.Timeout` | 15 | 439 | 9 KB / 59 KB |
-| `RetryStrategyOptions<TResult>.Delay` | 49 | 153 | 13 KB / 21 KB |
-| `RetryStrategyOptions<TResult>.MaxRetryAttempts` | 73 | 79 | 11 KB / 8 KB |
+| `ResilienceContext.CancellationToken` | 137 | 1,354 | 6.5 KB / 202 KB |
+| `Outcome<TResult>.Exception` | 113 | 1,537 | 6.6 KB / 216 KB |
+| `TimeoutStrategyOptions.Timeout` | 15 | 439 | 4.2 KB / 59 KB |
+| `RetryStrategyOptions<TResult>.Delay` | 49 | 153 | 6.1 KB / 21 KB |
+| `RetryStrategyOptions<TResult>.MaxRetryAttempts` | 73 | 79 | 6.0 KB / 8 KB |
 
 For names that are also common words, most grep hits are other symbols with the same name. For a distinctive name grep
-is as good and smaller. The Roslyn answer shows 20 references with context and the total count.
+is about as good. The Roslyn answer shows 20 references (relative path, the referencing line, the enclosing member) and the total.
+Before 0.3.0 it was twice the size (12-14 KB) and counted each reference once per target framework (925 for `MaxRetryAttempts`).
+
+## E. Things that did not work
+
+A background warm-up that built every project's compilation after `SharpTool_LoadSolution`, meant to make the first selection
+of a session fast. It had no measurable effect: 90 s after loading, the first selection on a busy file still hit the 10 s budget
+([bench_e.py](bench_e.py), [results/e-improvements.json](results/e-improvements.json)). The cold cost is Roslyn binding the
+documents a particular walk touches, which it caches per document afterwards (13.7 s the first time for one file, 1.7 s on
+repeat), and a selection on another file first did not speed it up. The warm-up was removed; the first selection of a session
+on busy code may fall back to the full suite.
 
 ## Reproduce
 
 ```bash
 git clone https://github.com/App-vNext/Polly.git bench/Polly && git -C bench/Polly checkout 9a81fdc7
 dotnet build bench/Polly/Polly.slnx
-python bench_a.py && python bench_b.py && python bench_c.py 10 && python bench_c2.py && python bench_d.py
+python bench_a.py && python bench_b.py && python bench_c.py 10 && python bench_c2.py && python bench_d.py && python bench_e.py
 ```
 
 `DOTNETDEVMCP=DotNetDevMCP@<version>` picks the server version; a `feed/` folder next to the scripts is added as a package source.
