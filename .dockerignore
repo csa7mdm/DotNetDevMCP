@@ -1,0 +1,5 @@
+**/bin/
+**/obj/
+.git/
+benchmarks/polly/results/
+tests/Sandbox.Fixtures/

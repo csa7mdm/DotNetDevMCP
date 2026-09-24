@@ -81,6 +81,67 @@ For repositories you don't trust (a pull request from a stranger, a downloaded s
 container or VM with only that repository mounted, no credentials, and restricted network. The server cannot provide that
 isolation itself.
 
+### Run it in a container
+
+A `Dockerfile` at the repo root builds DotNetDevMCP into an image that runs as a non-root user (uid 10001) with the .NET SDK
+available (the server shells out to `dotnet build`/`test`, so it needs the full SDK, not just the runtime, at container
+runtime). No registry image is published yet, so build it locally:
+
+```bash
+docker build -t dotnetdevmcp https://github.com/csa7mdm/DotNetDevMCP.git
+```
+
+Restore needs network access, so do it once, separately, before locking the container down:
+
+```bash
+docker run --rm --network bridge \
+  -v "$PWD:/src" -v dotnetdevmcp-nuget:/home/mcp/.nuget/packages \
+  --entrypoint dotnet \
+  dotnetdevmcp restore /src/YourSolution.sln
+```
+
+Then run the server itself with network disabled and the rest of the sandbox flags on:
+
+```bash
+claude mcp add dotnetdevmcp -- docker run -i --rm --network none -v "$PWD:/src" -v dotnetdevmcp-nuget:/home/mcp/.nuget/packages --memory 8g --pids-limit 512 --cap-drop ALL --security-opt no-new-privileges dotnetdevmcp --load-solution /src/YourSolution.sln
+```
+
+What each flag buys you:
+
+| Flag | Blocks |
+|---|---|
+| `--network none` | Outbound network access from the server and anything it spawns (`dotnet build`, `dotnet test`, MSBuild tasks, source generators). |
+| `--memory 8g` | Unbounded memory growth; the kernel OOM-kills the container's processes instead of exhausting the host. |
+| `--pids-limit 512` | Fork bombs and runaway process spawning inside the container. |
+| `--cap-drop ALL` | All Linux capabilities beyond the unprivileged default, including ones that could otherwise be used to escalate or interfere with the host. |
+| `--security-opt no-new-privileges` | Setuid/setgid binaries and similar mechanisms gaining privileges the container's own user doesn't have. |
+
+On Linux hosts, you can add `--runtime=runsc` to run the container under [gVisor](https://gvisor.dev/), which intercepts
+syscalls in a userspace kernel instead of relying solely on the host kernel's namespace/cgroup isolation. This is a genuinely
+stronger boundary, but it is Linux-hosts-only (no gVisor on Docker Desktop for Windows/macOS) and adds per-syscall overhead
+that shows up directly in `dotnet build`/`test` latency; measure it against your own workload before adopting it as a default.
+
+`tests/Sandbox.Fixtures/` contains xUnit tests (`ReadingSshKeysFails`, `WritingOutsideWorkspaceFails`, `NetworkEgressFails`,
+`ForkBombIsCapped`, `MemoryIsCapped`) that exercise these boundaries directly: each attempts one attack and asserts it failed.
+They are not part of `DotNetDevMCP.sln` and are meant to be run inside the container, with and without the sandbox flags, to
+prove the flags are doing something rather than being cargo-culted. CI runs them under the exact flags above in the `sandbox`
+job of `.github/workflows/build.yml`.
+
+**What this setup does *not* protect against:**
+
+- **The mounted repository is writable by design.** The whole point of the server is to build, test, and apply Roslyn edits
+  to your solution, so `-v "$PWD:/src"` is read-write on purpose. Anything that can reach that mount — the agent, a malicious
+  test, a compromised MSBuild task — can still modify or delete your source. The container only contains *where else* it can
+  reach, not what it can do to the code you handed it.
+- **Restore needs network.** The restore step above deliberately runs with `--network bridge` (or plain default networking)
+  because NuGet has to reach package feeds. That is a real window for a malicious `.csproj`/`nuget.config` (e.g. pointing at
+  an attacker-controlled feed, or a package with a build-time script) to make outbound requests. Only restore against
+  solutions you already trust, and switch back to `--network none` for the actual `--load-solution` run, which needs no
+  network for anything the server itself does.
+- **A container is not a hard security boundary on every host.** Docker containers share the host kernel; on Linux without
+  gVisor (or an equivalent), a kernel exploit can still escape the container. Treat this as raising the cost of an attack
+  (no ambient network, capped resources, no ambient host filesystem access beyond the mount), not as equivalent to a VM.
+
 ### `--http` mode
 
 HTTP mode listens on `localhost` only. A request that carries an `Origin` header is checked against an allow-list: only

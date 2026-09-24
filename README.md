@@ -149,6 +149,33 @@ solution directory, and `--clean-env` keeps secrets in environment variables awa
 trust, run the agent and the server in a container with no credentials. Don't expose `--http` beyond localhost. Details:
 [SECURITY.md](https://github.com/csa7mdm/DotNetDevMCP/blob/main/SECURITY.md#security-model).
 
+### Run it in a container
+
+No registry image exists yet; build it locally straight from GitHub:
+
+```bash
+docker build -t dotnetdevmcp https://github.com/csa7mdm/DotNetDevMCP.git
+```
+
+Restore first (needs network, so use the default bridge network for this step only):
+
+```bash
+docker run --rm --network bridge \
+  -v "$PWD:/src" -v dotnetdevmcp-nuget:/home/mcp/.nuget/packages \
+  --entrypoint dotnet \
+  dotnetdevmcp restore /src/YourSolution.sln
+```
+
+Then register the sandboxed server:
+
+```bash
+claude mcp add dotnetdevmcp -- docker run -i --rm --network none -v "$PWD:/src" -v dotnetdevmcp-nuget:/home/mcp/.nuget/packages --memory 8g --pids-limit 512 --cap-drop ALL --security-opt no-new-privileges dotnetdevmcp --load-solution /src/YourSolution.sln
+```
+
+On Linux hosts you can additionally run the container under [gVisor](https://gvisor.dev/) (`--runtime=runsc`) for a second, kernel-level layer of syscall isolation; measure the overhead for your workload before adopting it, since gVisor's userspace kernel adds latency to file and process operations that `dotnet build`/`test` do a lot of.
+
+**What this does not protect against:** the repository directory is mounted read-write by design (the point of the server is to build, test and edit it), so anything with access to that mount can still modify your source. And the restore step needs real network access, which is a real, if narrow, window: run it once against a solution you already trust, then switch to `--network none` for actual use. See [SECURITY.md](https://github.com/csa7mdm/DotNetDevMCP/blob/main/SECURITY.md#run-it-in-a-container) for the full breakdown, including what the sandbox flags each block.
+
 ## Help, feedback and contributing
 
 - **Questions, ideas, "is this a bug?"**: [Discussions](https://github.com/csa7mdm/DotNetDevMCP/discussions).

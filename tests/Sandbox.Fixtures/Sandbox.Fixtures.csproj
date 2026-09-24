@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Deliberately NOT added to DotNetDevMCP.sln: this project only makes sense
+    running inside the dotnetdevmcp container image (or against a similarly
+    locked-down host), not as part of the normal solution build/test loop.
+    See tests/Sandbox.Fixtures/Directory.Build.props and Directory.Packages.props
+    for why it also doesn't inherit the repo's central package management.
+  -->
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

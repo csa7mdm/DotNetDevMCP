@@ -89,3 +89,40 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: TestResults/**/*.trx
           retention-days: 7
+
+  sandbox:
+    name: container sandbox containment
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build image
+        run: docker build -t dotnetdevmcp:ci .
+
+      - name: Smoke test (container --help)
+        run: docker run --rm dotnetdevmcp:ci --help
+
+      - name: Fix fixtures ownership for the container's uid 10001 user
+        run: chmod -R a+rwX tests/Sandbox.Fixtures
+
+      - name: Restore Sandbox.Fixtures (network needed)
+        run: |
+          docker run --rm \
+            -v "$PWD/tests/Sandbox.Fixtures:/src" \
+            -v nuget:/home/mcp/.nuget/packages \
+            --entrypoint dotnet \
+            dotnetdevmcp:ci restore /src
+
+      - name: Run sandbox containment tests
+        run: |
+          docker run --rm \
+            --network none \
+            --memory 8g \
+            --pids-limit 512 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            -v "$PWD/tests/Sandbox.Fixtures:/src" \
+            -v nuget:/home/mcp/.nuget/packages \
+            --entrypoint dotnet \
+            dotnetdevmcp:ci test /src --no-restore
