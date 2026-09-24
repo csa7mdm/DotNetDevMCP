@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
+using DotNetDevMCP.Core;
 using Microsoft.CodeAnalysis.Text;
 
 namespace DotNetDevMCP.CodeIntelligence.Services;
@@ -332,7 +333,9 @@ public class DocumentOperationsService : IDocumentOperationsService {
             return false;
         }
 
-        return filePath.StartsWith(solutionDirectory, StringComparison.OrdinalIgnoreCase);
+        // PathBoundary.IsWithin resolves both sides with Path.GetFullPath before comparing, so ".." traversal
+        // and a sibling directory that merely shares a string prefix (App vs App-other) are both rejected.
+        return PathBoundary.IsWithin(filePath, solutionDirectory);
     }
 
     private bool IsReferencedBySolution(string filePath) {

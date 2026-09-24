@@ -2,6 +2,7 @@
 
 using System.ComponentModel;
 using DotNetDevMCP.CodeIntelligence.Interfaces;
+using DotNetDevMCP.Core;
 using DotNetDevMCP.Core.Models;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
@@ -38,7 +39,7 @@ public static class TestingTools
         TestRunner runner,
         ILogger<TestingToolsLogCategory> logger,
         [Description("Path to a test project (.csproj) or a solution (.sln)")] string path,
-        [Description("VSTest filter expression, e.g. FullyQualifiedName~OrderService|Category=Unit")] string? filter = null,
+        [Description("VSTest filter expression, e.g. FullyQualifiedName~OrderService|Category=Unit. For a project that runs under Microsoft.Testing.Platform, this is instead that test framework's own filter options, e.g. xUnit v3's `--filter-class My.Tests`; only --filter* and --treenode-filter options are accepted.")] string? filter = null,
         [Description("Exact fully qualified test names to run (Namespace.Class.Method). Combined with filter if both given.")] string[]? testNames = null,
         [Description("Skip the build. Only when nothing changed since the last build.")] bool noBuild = false,
         [Description("Run one target framework only, e.g. net10.0. Default: every framework the projects target.")] string? framework = null,
@@ -72,6 +73,12 @@ public static class TestingTools
         {
             return new { Success = false, Error = "No solution loaded. Call SharpTool_LoadSolution first or start the server with --load-solution." };
         }
+
+        var gitBaseError = GitRefValidation.Validate(gitBase, nameof(gitBase));
+        if (gitBaseError != null) return new { Success = false, Error = gitBaseError };
+
+        var frameworkError = DotnetArgumentValidation.ValidateFramework(framework);
+        if (frameworkError != null) return new { Success = false, Error = frameworkError };
 
         var solutionDir = Path.GetDirectoryName(solutions.CurrentSolution.FilePath!)!;
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -122,8 +129,9 @@ public static class TestingTools
             {
                 foreach (var project in byProject.Select(g => g.Key))
                 {
-                    var tfm = string.IsNullOrWhiteSpace(framework) ? "" : $" --framework {framework}";
-                    var (exit, stdout, stderr, _) = await TestRunner.RunDotnetAsync($"build \"{project}\" -nologo{tfm}", cancellationToken, TestRunner.DirectoryOf(project));
+                    var buildArgs = new List<string> { "build", project, "-nologo" };
+                    if (!string.IsNullOrWhiteSpace(framework)) { buildArgs.Add("--framework"); buildArgs.Add(framework); }
+                    var (exit, stdout, stderr, _) = await TestRunner.RunDotnetAsync(buildArgs, cancellationToken, TestRunner.DirectoryOf(project));
                     if (exit != 0)
                     {
                         return new { Success = false, ChangedFiles = files, AffectedTests = list, Ran = false, Error = $"Build failed for {Path.GetFileName(project)}:\n{BuildErrors(stdout + stderr)}" };
@@ -157,12 +165,17 @@ public static class TestingTools
         Failures = s.Failures.Select(f => new { f.FullyQualifiedName, f.ErrorMessage, f.StackTrace, f.Output }),
     };
 
+    // gitBase is validated by the caller (RunAffected) with GitRefValidation before this ever runs; validating
+    // again here would be redundant, but the ArgumentList below is what actually keeps it from being parsed as
+    // a git option (e.g. "--output=C:/x.txt") the way concatenating it into a single argument string would allow.
     private static async Task<string[]> GitChangedFilesAsync(string repoDir, string? gitBase, CancellationToken ct)
     {
-        var args = gitBase is null ? "status --porcelain --untracked-files=all" : $"diff --name-only {gitBase}";
+        List<string> args = gitBase is null
+            ? ["status", "--porcelain", "--untracked-files=all"]
+            : ["diff", "--name-only", gitBase];
         var (exit, output, err, _) = await TestRunner.RunProcessAsync("git", args, ct, repoDir);
-        if (exit != 0) throw new InvalidOperationException($"git {args} failed: {err.Trim()}");
-        var (_, root, _, _) = await TestRunner.RunProcessAsync("git", "rev-parse --show-toplevel", ct, repoDir);
+        if (exit != 0) throw new InvalidOperationException($"git {string.Join(' ', args)} failed: {err.Trim()}");
+        var (_, root, _, _) = await TestRunner.RunProcessAsync("git", ["rev-parse", "--show-toplevel"], ct, repoDir);
         root = root.Trim().Length == 0 ? repoDir : root.Trim();
         return output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(l => gitBase is null ? l[3..].Trim() : l.Trim())     // porcelain lines are "XY path"
