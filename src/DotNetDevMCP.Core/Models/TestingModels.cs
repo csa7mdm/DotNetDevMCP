@@ -61,3 +61,13 @@ public record AffectedTest(string FullyQualifiedName, string ProjectPath, string
 /// enough share of everything that running it filtered is likely slower than just running the whole solution.
 /// </summary>
 public record AffectedTestSelection(IReadOnlyList<AffectedTest> Tests, bool Complete, int SymbolsSearched, int TotalTestMethods);
+
+/// <summary>
+/// Which slice of the solution a `dotnet_test_affected` run actually executed, once the selection/fallback decision is made.
+/// Selection: the Roslyn reference-walk selection ran, filtered to just the affected tests (the common case).
+/// Projects: the selection was incomplete or too large, so instead of everything, only the test projects reachable from the
+/// change via the project reference graph ran (see AffectedTestFinder.FindAffectedTestProjects).
+/// Solution: the selection was incomplete or too large, and even the project-reachability fallback covered every test
+/// project (or none could be resolved), so the whole solution ran in one invocation, same as before this fallback existed.
+/// </summary>
+public enum AffectedRunScope { Selection, Projects, Solution }
