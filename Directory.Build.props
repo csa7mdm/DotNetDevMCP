@@ -25,7 +25,7 @@
     <RepositoryUrl>https://github.com/csa7mdm/DotNetDevMCP</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>mcp;mcp-server;model-context-protocol;dotnet;csharp;roslyn;testing;build;ai;agents</PackageTags>
-    <Description>MCP server for .NET: Roslyn code navigation and refactoring, build, and affected-test selection.</Description>
+    <Description>DotNetDevMCP is an open-source MCP server that gives AI coding agents Roslyn's compiler view of a .NET solution.</Description>
 
     <!-- Documentation -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

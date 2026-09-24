@@ -1,0 +1,6 @@
+title: "DotNetDevMCP"
+description: "DotNetDevMCP is an open-source MCP server that gives AI coding agents Roslyn's compiler view of a .NET solution."
+url: "https://csa7mdm.github.io"
+baseurl: "/DotNetDevMCP"
+plugins:
+  - jekyll-sitemap

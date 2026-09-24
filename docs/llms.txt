@@ -1,0 +1,26 @@
+# DotNetDevMCP
+
+> DotNetDevMCP is an open-source MCP server that gives AI coding agents Roslyn's compiler view of a .NET solution. MIT licensed; requires the .NET 10 SDK.
+
+## Docs
+
+- [DotNetDevMCP](https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/index.md): DotNetDevMCP is an open-source MCP server that gives AI coding agents Roslyn's compiler view of a .NET solution.
+- [Installation](https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/installation.md): Install DotNetDevMCP in Claude Code, VS Code, Visual Studio, Cursor or Claude Desktop. Requires the .NET 10 SDK.
+- [Tutorial](https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/tutorial.md): One realistic session on your own solution with DotNetDevMCP: understand some code, change it safely, and check the change with affected tests.
+- [Tools Reference](https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/tools-reference.md): Every DotNetDevMCP tool and its parameters, generated from the server's own tools/list.
+- [Affected tests](https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/affected-tests.md): dotnet_test_affected answers "which tests can my change break?" with the compiler, then runs only those tests.
+- [Configuration](https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/configuration.md): DotNetDevMCP server options: loading a solution at startup, enabling git and monitoring tools, HTTP mode, logging and --clean-env.
+- [Troubleshooting](https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/troubleshooting.md): Fixes for DotNetDevMCP problems: the server not starting, solutions that don't load, affected-test surprises and rejected values.
+- [Security](https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/security.md): DotNetDevMCP is a local developer tool: it runs as you, for an AI agent you chose to trust with your code.
+- [Architecture](https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/architecture.md): A map of DotNetDevMCP's projects and how a tool call flows through them, for contributors.
+- [Contributing](https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/docs/contributing.md): Contributions of every size are welcome, and not only code: bug reports, docs fixes and runs on your own solution help too.
+
+## Evidence
+
+- [Polly benchmark](https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/benchmarks/polly/README.md): Measured on Polly: affected-test selection speed, fault-injection recall and reference answer size compared with grep.
+- [Benchmark article](https://csa7mdm.github.io/DotNetDevMCP/articles/polly-benchmark/): I benchmarked my .NET MCP server on Polly. It broke six ways.
+
+## Optional
+
+- [Changelog](https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/CHANGELOG.md): Release history.
+- [Security policy](https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/SECURITY.md): Threat model and how to report vulnerabilities.
