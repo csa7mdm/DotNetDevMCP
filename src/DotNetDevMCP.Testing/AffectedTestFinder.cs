@@ -242,15 +242,25 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
             foreach (var dep in deps) if (reachable.Add(dep)) frontier.Enqueue(dep);
         }
 
-        return reachable.Select(solution.GetProject).OfType<Project>().Where(IsTestProject)
+        return reachable.Select(solution.GetProject).OfType<Project>().Where(IsRunnableTestProject)
             .Select(p => p.FilePath).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
+
+    /// <summary>
+    /// A project `dotnet test` can run: references a test framework AND declares a test method. Helper libraries such as
+    /// Polly.TestUtils reference xUnit without containing tests, and `dotnet test` on them fails with "No test projects were found".
+    /// Syntax only, so cheap; a syntax tree already parsed is cached by the workspace.
+    /// </summary>
+    private static bool IsRunnableTestProject(Project p) =>
+        // ponytail: synchronous parse; the server has no synchronization context and parsing is cheap next to the build that follows.
+        IsTestProject(p) && p.Documents.Any(d => d.GetSyntaxRootAsync().GetAwaiter().GetResult() is { } root
+            && root.DescendantNodes().OfType<MethodDeclarationSyntax>().Any(HasTestAttributeSyntax));
 
     /// <summary>Every test project in the solution, deduped by file path across TFM variants. Denominator for deciding
     /// whether <see cref="FindAffectedTestProjects"/> reached "basically everything", where running the whole solution
     /// in one invocation is simpler than filtering to a selection that isn't actually smaller.</summary>
     public static IReadOnlyList<string> AllTestProjectFilePaths(Solution solution) =>
-        solution.Projects.Where(IsTestProject).Select(p => p.FilePath).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        solution.Projects.Where(IsRunnableTestProject).Select(p => p.FilePath).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
     /// <summary>"Polly.Core.Tests(net10.0)" -> 10.0; no TFM suffix -> 0.</summary>
     private static Version TfmVersion(string projectName)

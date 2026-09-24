@@ -140,13 +140,29 @@ public class AffectedTestFinderTests
             .AddProject(ProjectInfo.Create(libA10, VersionStamp.Default, "LibA(net10.0)", "LibA", LanguageNames.CSharp, filePath: libAPath, metadataReferences: [corlib, runtime]));
 
         var testsPath = Path.Combine(Root, "test", "LibA.Tests.csproj");
+        var testsFile = Path.Combine(Root, "test", "LibA.Tests.cs");
+        const string testsCode = "using Xunit; namespace LibA.Tests; public class T { [Fact] public void T1() { } }";
         var tests8 = ProjectId.CreateNewId();
         var tests10 = ProjectId.CreateNewId();
         solution = solution
             .AddProject(ProjectInfo.Create(tests8, VersionStamp.Default, "LibA.Tests(net8.0)", "LibA.Tests", LanguageNames.CSharp, filePath: testsPath, metadataReferences: [corlib, runtime, xunit]))
             .AddProjectReference(tests8, new ProjectReference(libA8))
+            .AddDocument(DocumentInfo.Create(DocumentId.CreateNewId(tests8), "LibA.Tests.cs",
+                loader: TextLoader.From(TextAndVersion.Create(SourceText.From(testsCode), VersionStamp.Default)), filePath: testsFile))
             .AddProject(ProjectInfo.Create(tests10, VersionStamp.Default, "LibA.Tests(net10.0)", "LibA.Tests", LanguageNames.CSharp, filePath: testsPath, metadataReferences: [corlib, runtime, xunit]))
-            .AddProjectReference(tests10, new ProjectReference(libA10));
+            .AddProjectReference(tests10, new ProjectReference(libA10))
+            .AddDocument(DocumentInfo.Create(DocumentId.CreateNewId(tests10), "LibA.Tests.cs",
+                loader: TextLoader.From(TextAndVersion.Create(SourceText.From(testsCode), VersionStamp.Default)), filePath: testsFile));
+
+        // A helper library that references xUnit but declares no tests (like Polly.TestUtils): `dotnet test` can't run it.
+        var utils = ProjectId.CreateNewId();
+        solution = solution
+            .AddProject(ProjectInfo.Create(utils, VersionStamp.Default, "LibA.TestUtils(net8.0)", "LibA.TestUtils", LanguageNames.CSharp,
+                filePath: Path.Combine(Root, "test", "LibA.TestUtils.csproj"), metadataReferences: [corlib, runtime, xunit]))
+            .AddProjectReference(utils, new ProjectReference(libA8))
+            .AddDocument(DocumentInfo.Create(DocumentId.CreateNewId(utils), "Fakes.cs",
+                loader: TextLoader.From(TextAndVersion.Create(SourceText.From("namespace LibA.TestUtils; public static class Fakes { public static int One() => 1; }"), VersionStamp.Default)),
+                filePath: Path.Combine(Root, "test", "Fakes.cs")));
 
         var affected = AffectedTestFinder.FindAffectedTestProjects(solution, [net8OnlyFile]);
 
