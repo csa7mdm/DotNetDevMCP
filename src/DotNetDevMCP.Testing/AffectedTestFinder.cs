@@ -216,22 +216,12 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
     /// edge in this graph and will not be found. That's a real gap, not a bug - documenting it here and in the tool's
     /// response note is the fix, since detecting package-mediated dependencies would need a much heavier analysis.
     /// </remarks>
-    public static IReadOnlyList<string> FindAffectedTestProjects(Solution solution, IEnumerable<string> changedFiles)
+    public static IReadOnlyList<string> FindAffectedTestProjects(Solution solution, IEnumerable<string> changedFiles, AssetsCache? assetsCache = null)
     {
         var changedProjectIds = changedFiles.SelectMany(f => OwningProjects(solution, f)).ToHashSet();
         if (changedProjectIds.Count == 0) return [];
 
-        // Reverse ProjectReference edges (referenced -> referencing projects), across all TFM variants.
-        var dependents = new Dictionary<ProjectId, List<ProjectId>>();
-        foreach (var project in solution.Projects)
-        {
-            foreach (var reference in project.ProjectReferences)
-            {
-                if (!dependents.TryGetValue(reference.ProjectId, out var list)) dependents[reference.ProjectId] = list = [];
-                list.Add(project.Id);
-            }
-        }
-        AddPackageEdges(solution, dependents);
+        var dependents = BuildDependentsGraph(solution, assetsCache ?? new AssetsCache());
 
         var reachable = new HashSet<ProjectId>(changedProjectIds);
         var frontier = new Queue<ProjectId>(changedProjectIds);
@@ -245,6 +235,24 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
             .Select(p => p.FilePath).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
+    /// <summary>Reverse ProjectReference edges (referenced -&gt; referencing projects, across all TFM variants) plus
+    /// <see cref="AddPackageEdges"/>'s package-mediated edges - the same graph <see cref="FindAffectedTestProjects"/>
+    /// and <see cref="FindTestProjectsForPackageChange"/> both walk, built once so both share one assets cache.</summary>
+    private static Dictionary<ProjectId, List<ProjectId>> BuildDependentsGraph(Solution solution, AssetsCache assetsCache)
+    {
+        var dependents = new Dictionary<ProjectId, List<ProjectId>>();
+        foreach (var project in solution.Projects)
+        {
+            foreach (var reference in project.ProjectReferences)
+            {
+                if (!dependents.TryGetValue(reference.ProjectId, out var list)) dependents[reference.ProjectId] = list = [];
+                list.Add(project.Id);
+            }
+        }
+        AddPackageEdges(solution, dependents, assetsCache);
+        return dependents;
+    }
+
     /// <summary>
     /// Reverse edges from a solution project P to a test project that consumes P only through a restored NuGet
     /// PackageReference - no Roslyn ProjectReference at all - discovered from the test project's
@@ -253,7 +261,7 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
     /// ponytail: this only follows package ids that match another SOLUTION project's resolved packageId. A test
     /// project that depends on a third-party (non-solution) package is unaffected either way, so it's out of scope.
     /// </summary>
-    private static void AddPackageEdges(Solution solution, Dictionary<ProjectId, List<ProjectId>> dependents)
+    private static void AddPackageEdges(Solution solution, Dictionary<ProjectId, List<ProjectId>> dependents, AssetsCache assetsCache)
     {
         var solutionDir = solution.FilePath is { } solutionPath ? Path.GetDirectoryName(solutionPath) : null;
 
@@ -268,10 +276,8 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
         foreach (var group in solution.Projects.Where(IsTestProject).GroupBy(p => p.FilePath))
         {
             if (group.Key is not { } testProjectPath) continue; // no file on disk: no obj folder to read assets from.
-            var projectDir = Path.GetDirectoryName(testProjectPath);
-            if (projectDir is null) continue;
-            var packageIds = ReadAssetsPackageIds(Path.Combine(projectDir, "obj", "project.assets.json"));
-            if (packageIds.Count == 0) continue;
+            var packageIds = assetsCache.Get(testProjectPath);
+            if (packageIds is not { Count: > 0 }) continue;
 
             var testProjectIds = group.Select(p => p.Id).ToList();
             foreach (var packageId in packageIds)
@@ -286,35 +292,96 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
         }
     }
 
+    /// <summary>Result of <see cref="FindTestProjectsForPackageChange"/>: either the runnable test projects reachable
+    /// from the change, or - when UnrestoredProjectPath is set - a signal that narrowing isn't safe because that
+    /// project's restore state is unknown (TestProjects is then always empty).</summary>
+    public sealed record PackageChangeImpact(IReadOnlyList<string> TestProjects, string? UnrestoredProjectPath);
+
     /// <summary>
-    /// Test projects (dedupe by file path across TFM variants) whose obj/project.assets.json "targets" section
-    /// references any of the given package ids. The targets section is already transitive, so this also finds a
-    /// project that depends on a changed package only via another package in its own graph. Used by the Central
-    /// Package Management precision path in <c>TestingTools.RunAffected</c>.
+    /// Central Package Management precision support: the runnable test projects reachable from a change to the given
+    /// package ids, considering EVERY solution project's restored assets - not just test projects' own. A package
+    /// referenced with PrivateAssets="all" (an analyzer or source generator) never appears in a downstream test
+    /// project's own project.assets.json, only in the source project's that references it directly; scanning test
+    /// projects alone (the previous approach) made such a change invisible. A project whose assets show a match is
+    /// treated exactly like a directly-changed project: reachable test projects are found by walking the same
+    /// reverse ProjectReference + package-reference graph <see cref="FindAffectedTestProjects"/> uses, then filtered
+    /// to <see cref="IsRunnableTestProject"/> (not just <see cref="IsTestProject"/>) so a helper library with no test
+    /// method (referencing xUnit but declaring none, like Polly.TestUtils) is never selected to run.
+    /// UnrestoredProjectPath is set - and TestProjects then empty - the moment ANY solution project (test or not) has
+    /// no obj/project.assets.json at all: without every project's assets, "this project doesn't use the changed
+    /// package" can't be told apart from "restore state unknown", so the caller should not narrow.
     /// </summary>
-    public static IReadOnlyList<string> FindTestProjectsUsingPackages(Solution solution, IReadOnlySet<string> packageIds)
+    public static PackageChangeImpact FindTestProjectsForPackageChange(Solution solution, IReadOnlySet<string> packageIds, AssetsCache assetsCache)
     {
-        var results = new List<string>();
-        foreach (var group in solution.Projects.Where(IsTestProject).GroupBy(p => p.FilePath))
+        var projectsByPath = solution.Projects.Where(p => p.FilePath is not null)
+            .GroupBy(p => p.FilePath!, StringComparer.OrdinalIgnoreCase).ToList();
+
+        foreach (var group in projectsByPath)
         {
-            if (group.Key is not { } testProjectPath) continue;
-            var projectDir = Path.GetDirectoryName(testProjectPath);
-            if (projectDir is null) continue;
-            var referenced = ReadAssetsPackageIds(Path.Combine(projectDir, "obj", "project.assets.json"));
-            if (referenced.Overlaps(packageIds)) results.Add(testProjectPath);
+            if (assetsCache.Get(group.Key) is null) return new PackageChangeImpact([], group.Key);
         }
-        return results;
+
+        var matched = new HashSet<ProjectId>();
+        foreach (var group in projectsByPath)
+        {
+            var ids = assetsCache.Get(group.Key);
+            if (ids is { Count: > 0 } && ids.Overlaps(packageIds))
+            {
+                foreach (var project in group) matched.Add(project.Id);
+            }
+        }
+        if (matched.Count == 0) return new PackageChangeImpact([], null);
+
+        var dependents = BuildDependentsGraph(solution, assetsCache);
+        var reachable = new HashSet<ProjectId>(matched);
+        var frontier = new Queue<ProjectId>(matched);
+        while (frontier.Count > 0)
+        {
+            if (!dependents.TryGetValue(frontier.Dequeue(), out var deps)) continue;
+            foreach (var dep in deps) if (reachable.Add(dep)) frontier.Enqueue(dep);
+        }
+
+        var testProjects = reachable.Select(solution.GetProject).OfType<Project>().Where(IsRunnableTestProject)
+            .Select(p => p.FilePath).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return new PackageChangeImpact(testProjects, null);
     }
 
     /// <summary>
     /// Test projects (dedupe by file path across TFM variants) with no obj/project.assets.json at all - i.e. never
-    /// restored - for whom <see cref="AddPackageEdges"/> and <see cref="FindTestProjectsUsingPackages"/> cannot see
-    /// any package reference. Surfaced in the affected-test note so a package-mediated edge that was missed reads as
-    /// "not restored", not as "this project doesn't depend on the change".
+    /// restored - for whom <see cref="AddPackageEdges"/> cannot see any package reference. Surfaced in the
+    /// affected-test note so a package-mediated edge that was missed reads as "not restored", not as "this project
+    /// doesn't depend on the change".
     /// </summary>
-    public static int CountUnrestoredTestProjects(Solution solution) =>
-        solution.Projects.Where(IsTestProject).Select(p => p.FilePath).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase)
-            .Count(path => !File.Exists(Path.Combine(Path.GetDirectoryName(path)!, "obj", "project.assets.json")));
+    public static int CountUnrestoredTestProjects(Solution solution, AssetsCache? assetsCache = null)
+    {
+        assetsCache ??= new AssetsCache();
+        return solution.Projects.Where(IsTestProject).Select(p => p.FilePath).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count(path => assetsCache.Get(path) is null);
+    }
+
+    /// <summary>
+    /// Per-call cache of a project's project.assets.json, keyed by project file path: null means the file doesn't
+    /// exist (the project has never been restored); otherwise the package ids <see cref="ReadAssetsPackageIds"/>
+    /// found (possibly empty, for a restored project with no "type":"package" entries or a malformed file). Shared
+    /// across <see cref="FindAffectedTestProjects"/>, <see cref="FindTestProjectsForPackageChange"/> and
+    /// <see cref="CountUnrestoredTestProjects"/> within one `dotnet_test_affected` call so each project's assets file
+    /// is read and parsed at most once, even though all three ask about the same projects.
+    /// </summary>
+    public sealed class AssetsCache
+    {
+        private readonly Dictionary<string, HashSet<string>?> _byProjectPath = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <param name="projectFilePath">A project's .csproj path; its obj/project.assets.json is read relative to it.</param>
+        public HashSet<string>? Get(string projectFilePath)
+        {
+            if (_byProjectPath.TryGetValue(projectFilePath, out var cached)) return cached;
+            var dir = Path.GetDirectoryName(projectFilePath);
+            var assetsPath = dir is null ? null : Path.Combine(dir, "obj", "project.assets.json");
+            var result = assetsPath is not null && File.Exists(assetsPath) ? ReadAssetsPackageIds(assetsPath) : null;
+            _byProjectPath[projectFilePath] = result;
+            return result;
+        }
+    }
 
     /// <summary>
     /// The package id a solution project would publish as, for matching against project.assets.json package
@@ -370,8 +437,11 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
     /// assets file already covers every TFM of a multi-targeted project: "targets" -&gt; &lt;tfm&gt; -&gt;
     /// "&lt;id&gt;/&lt;version&gt;" entries whose "type" is "package" (as opposed to "project", a ProjectReference
     /// restored into the same graph, which is already covered separately). Empty - never throwing - when the file is
-    /// missing or the JSON is malformed: a corrupted or absent lock file just means this edge source contributes
-    /// nothing, not a hard failure for the whole affected-test walk.
+    /// missing, unreadable, or the JSON is malformed OR simply not shaped like an assets file ("targets" absent, not
+    /// an object, or a TFM entry that isn't an object): a corrupted, permission-denied, or unexpected-shape lock file
+    /// just means this edge source contributes nothing, not a hard failure for the whole affected-test walk. Every
+    /// JsonElement access is guarded by a ValueKind check first, since JsonElement's Get/TryGetProperty and
+    /// EnumerateObject throw InvalidOperationException on the wrong kind rather than returning false.
     /// </summary>
     private static HashSet<string> ReadAssetsPackageIds(string assetsJsonPath)
     {
@@ -381,19 +451,21 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
         {
             using var stream = File.OpenRead(assetsJsonPath);
             using var document = JsonDocument.Parse(stream);
-            if (!document.RootElement.TryGetProperty("targets", out var targets)) return ids;
+            if (document.RootElement.ValueKind != JsonValueKind.Object) return ids;
+            if (!document.RootElement.TryGetProperty("targets", out var targets) || targets.ValueKind != JsonValueKind.Object) return ids;
             foreach (var tfm in targets.EnumerateObject())
             {
+                if (tfm.Value.ValueKind != JsonValueKind.Object) continue;
                 foreach (var entry in tfm.Value.EnumerateObject())
                 {
                     if (entry.Value.ValueKind != JsonValueKind.Object) continue;
-                    if (!entry.Value.TryGetProperty("type", out var type) || !type.ValueEquals("package")) continue;
+                    if (!entry.Value.TryGetProperty("type", out var type) || type.ValueKind != JsonValueKind.String || !type.ValueEquals("package")) continue;
                     var slash = entry.Name.IndexOf('/');
                     ids.Add(slash > 0 ? entry.Name[..slash] : entry.Name);
                 }
             }
         }
-        catch (Exception ex) when (ex is JsonException or IOException)
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
             return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }

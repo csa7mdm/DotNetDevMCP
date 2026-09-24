@@ -97,7 +97,9 @@ public static class TestingTools
         var buildWideChange = untraced.Any(IsBuildWideFile);
         if (files.Length == 0 && untraced.Length == 0)
         {
-            return new { Success = true, ChangedFiles = Array.Empty<string>(), AffectedTests = Array.Empty<object>(), Message = "No changed code or project files." };
+            var message = "No changed code or project files.";
+            if (dllChanged.Length > 0) message += " Binary references (.dll) are not traced.";
+            return new { Success = true, ChangedFiles = Array.Empty<string>(), AffectedTests = Array.Empty<object>(), Message = message };
         }
 
         sw.Restart();
@@ -118,6 +120,7 @@ public static class TestingTools
         AffectedRunScope scope;
         IReadOnlyList<string> projectsToRun = [];
         IReadOnlyList<string> allTestProjects = [];
+        var assetsCache = new AffectedTestFinder.AssetsCache();
         if (untraced.Length == 0 && selection.Complete && selectedFraction <= maxSelectedFraction)
         {
             scope = AffectedRunScope.Selection;
@@ -132,22 +135,39 @@ public static class TestingTools
                 : $"Selected {affected.Count} of {selection.TotalTestMethods} test methods ({selectedFraction:P0}), above the {maxSelectedFraction:P0} threshold: a selection this large is likely slower filtered than running the whole solution.";
 
             // Central Package Management precision: a Directory.Packages.props change is build-wide in general (it can
-            // affect any project), but when it's the ONLY build-wide file that changed, diffing its previous and current
-            // XML tells us exactly which package ids moved - and the assets-based edge above can then tell us exactly
-            // which test projects use them, instead of falling back to the whole solution.
-            var buildWideFiles = untraced.Where(IsBuildWideFile).ToArray();
-            var cpmOnly = buildWideChange && buildWideFiles.Length == 1
-                && Path.GetFileName(buildWideFiles[0]).Equals("Directory.Packages.props", StringComparison.OrdinalIgnoreCase);
-            var cpm = cpmOnly ? await TryCentralPackageManagementScopeAsync(solution, solutionDir, buildWideFiles[0], gitBase, cancellationToken) : null;
+            // affect any project), so it's only narrowed when it is the ONLY changed file of any kind (a build-wide
+            // props change alongside a traced .cs change, or any other file, keeps the pre-existing build-wide ->
+            // whole-solution behavior below - merging a package-version diff with a symbol-level selection would be a
+            // different, riskier feature). Diffing the file's previous and current XML then tells us exactly which
+            // package ids moved, and the reverse dependency graph (ProjectReference + package edges, walked from every
+            // solution project - not just test projects - whose restored assets reference one of them) tells us
+            // exactly which runnable test projects to run instead of the whole solution.
+            var cpmOnly = changed.Length == 1
+                && IsBuildWideFile(changed[0])
+                && Path.GetFileName(changed[0]).Equals("Directory.Packages.props", StringComparison.OrdinalIgnoreCase);
+            var cpm = cpmOnly ? await TryCentralPackageManagementScopeAsync(solution, solutionDir, changed[0], gitBase, assetsCache, cancellationToken) : null;
 
-            var reachableProjects = AffectedTestFinder.FindAffectedTestProjects(solution, files.Concat(untraced));
+            // Skipped entirely for the cpmOnly case: a lone build-wide change can never land in the reachableProjects
+            // branch below (buildWideChange always routes it to Solution or the CPM Projects scope first), so
+            // computing it would only cost an unused pass over the project graph and assets files.
+            var reachableProjects = cpmOnly
+                ? (IReadOnlyList<string>)Array.Empty<string>()
+                : AffectedTestFinder.FindAffectedTestProjects(solution, files.Concat(untraced), assetsCache);
             allTestProjects = AffectedTestFinder.AllTestProjectFilePaths(solution);
 
-            if (cpm is { Projects.Count: > 0 } cpmHit)
+            if (cpm is { Projects.Count: > 0 } cpmHit && cpmHit.Projects.Count < allTestProjects.Count)
             {
                 scope = AffectedRunScope.Projects;
                 projectsToRun = cpmHit.Projects;
                 note = cpmHit.Note;
+            }
+            else if (cpm is { Projects.Count: > 0 } cpmCoversAll)
+            {
+                // Narrowed set happens to be every runnable test project: one solution-wide run is simpler than
+                // filtered per-project runs that would add up to the same coverage, exactly like the non-CPM fallback
+                // below already prefers Solution once reachableProjects covers everything.
+                scope = AffectedRunScope.Solution;
+                note = $"Directory.Packages.props changed: {cpmCoversAll.IdsSummary}; every runnable test project uses at least one of them, so running the whole solution instead.";
             }
             else if (buildWideChange || reachableProjects.Count == 0 || reachableProjects.Count >= allTestProjects.Count)
             {
@@ -164,15 +184,15 @@ public static class TestingTools
                 projectsToRun = reachableProjects;
                 var names = string.Join(", ", reachableProjects.Select(Path.GetFileName));
                 note = $"{reason} Running the test projects reachable from the change via project references instead: {names}. " +
-                    "This is a superset of the affected tests (some of their other tests may also run); a test project that " +
-                    "depends on the changed code only through a NuGet package reference, with no ProjectReference, is not " +
-                    "detected by this fallback and may be missed.";
+                    "This is a superset of the affected tests (some of their other tests may also run); a test project " +
+                    "that uses the changed code through a NuGet package is found only if it has been restored " +
+                    "(obj/project.assets.json); cross-repository consumers are not found.";
             }
         }
 
         if (scope == AffectedRunScope.Projects)
         {
-            var unrestoredCount = AffectedTestFinder.CountUnrestoredTestProjects(solution);
+            var unrestoredCount = AffectedTestFinder.CountUnrestoredTestProjects(solution, assetsCache);
             if (unrestoredCount > 0)
             {
                 note = $"{note} {unrestoredCount} test project(s) have no obj/project.assets.json (not restored), so package references for them are unknown.";
@@ -303,20 +323,24 @@ public static class TestingTools
 
     /// <summary>Result of <see cref="TryCentralPackageManagementScopeAsync"/>: which test projects to run and the note
     /// to report for it. Projects is empty when precision wasn't possible - Note then explains why, and the caller
-    /// falls back to running the whole solution exactly as it did before this precision existed.</summary>
-    private sealed record CpmScope(IReadOnlyList<string> Projects, string Note);
+    /// falls back to running the whole solution exactly as it did before this precision existed. IdsSummary is the
+    /// comma-joined changed package ids (empty until they're known), reused by the caller to phrase its own note when
+    /// the narrowed set happens to cover every runnable test project.</summary>
+    private sealed record CpmScope(IReadOnlyList<string> Projects, string IdsSummary, string Note);
 
     /// <summary>
     /// Central Package Management precision for a Directory.Packages.props change: diffs its previous and current
-    /// version (via git) to the package ids that were actually added, removed, or changed version, then selects only
-    /// the test projects whose restored project.assets.json references one of them (see
-    /// <see cref="AffectedTestFinder.FindTestProjectsUsingPackages"/> - its "targets" section is already transitive).
-    /// Falls back to an empty result - explained in its Note - when git isn't available, either version of the file
-    /// can't be read or parsed, or no restored test project uses the changed ids; the caller then runs the whole
-    /// solution exactly as it did before this precision existed.
+    /// version (via git) to the package ids that were actually added, removed, or changed version - refusing to
+    /// narrow at all if anything else in the file changed too (see <see cref="IsOnlyPackageVersionChange"/>) - then
+    /// selects the runnable test projects reachable from every solution project whose restored assets reference one
+    /// of those ids (<see cref="AffectedTestFinder.FindTestProjectsForPackageChange"/>). Falls back to an empty
+    /// result - explained in its Note - when git isn't available, either version of the file can't be read or
+    /// parsed, something other than a package version changed, any solution project isn't restored, or no restored
+    /// project uses the changed ids; the caller then runs the whole solution exactly as it did before this precision
+    /// existed.
     /// </summary>
     private static async Task<CpmScope> TryCentralPackageManagementScopeAsync(
-        Solution solution, string solutionDir, string propsFilePath, string? gitBase, CancellationToken ct)
+        Solution solution, string solutionDir, string propsFilePath, string? gitBase, AffectedTestFinder.AssetsCache assetsCache, CancellationToken ct)
     {
         const string fallbackSuffix = "running the whole solution instead.";
         string newXml;
@@ -326,7 +350,7 @@ public static class TestingTools
         }
         catch (IOException)
         {
-            return new CpmScope([], $"Directory.Packages.props changed but could not be read; {fallbackSuffix}");
+            return new CpmScope([], "", $"Directory.Packages.props changed but could not be read; {fallbackSuffix}");
         }
 
         // Same argument-list git invocation the file already uses (GitChangedFilesAsync): an ArgumentList, not a
@@ -334,7 +358,7 @@ public static class TestingTools
         var (rootExit, rootOut, _, _) = await TestRunner.RunProcessAsync("git", ["rev-parse", "--show-toplevel"], ct, solutionDir);
         if (rootExit != 0)
         {
-            return new CpmScope([], $"Directory.Packages.props changed but git is not available to diff it; {fallbackSuffix}");
+            return new CpmScope([], "", $"Directory.Packages.props changed but git is not available to diff it; {fallbackSuffix}");
         }
         var root = rootOut.Trim();
         var relative = Path.GetRelativePath(root, propsFilePath).Replace('\\', '/');
@@ -343,26 +367,43 @@ public static class TestingTools
         var (showExit, showOut, showErr, _) = await TestRunner.RunProcessAsync("git", ["show", $"{gitRef}:{relative}"], ct, root);
         if (showExit != 0)
         {
-            return new CpmScope([], $"Directory.Packages.props changed but its previous version ({gitRef}:{relative}) could not be read from git ({showErr.Trim()}); {fallbackSuffix}");
+            return new CpmScope([], "", $"Directory.Packages.props changed but its previous version ({gitRef}:{relative}) could not be read from git ({showErr.Trim()}); {fallbackSuffix}");
+        }
+
+        var onlyVersionsChanged = IsOnlyPackageVersionChange(showOut, newXml);
+        if (onlyVersionsChanged is null)
+        {
+            return new CpmScope([], "", $"Directory.Packages.props changed but its XML could not be diffed; {fallbackSuffix}");
+        }
+        if (onlyVersionsChanged == false)
+        {
+            return new CpmScope([], "", $"Directory.Packages.props changed beyond package versions; {fallbackSuffix}");
         }
 
         var changedIds = DiffPackageVersions(showOut, newXml);
         if (changedIds is null)
         {
-            return new CpmScope([], $"Directory.Packages.props changed but its XML could not be diffed; {fallbackSuffix}");
+            // Can't happen given onlyVersionsChanged was true above (both documents parsed), but keep the same safe
+            // fallback rather than assuming.
+            return new CpmScope([], "", $"Directory.Packages.props changed but its XML could not be diffed; {fallbackSuffix}");
         }
+        var idsSummary = string.Join(", ", changedIds.OrderBy(x => x, StringComparer.OrdinalIgnoreCase));
         if (changedIds.Count == 0)
         {
-            return new CpmScope([], $"Directory.Packages.props changed but no package version actually differs between {gitRef} and the working tree; {fallbackSuffix}");
+            return new CpmScope([], idsSummary, $"Directory.Packages.props changed but no package version actually differs between {gitRef} and the working tree; {fallbackSuffix}");
         }
 
-        var selected = AffectedTestFinder.FindTestProjectsUsingPackages(solution, changedIds);
-        if (selected.Count == 0)
+        var impact = AffectedTestFinder.FindTestProjectsForPackageChange(solution, changedIds, assetsCache);
+        if (impact.UnrestoredProjectPath is { } unrestored)
         {
-            return new CpmScope([], $"Directory.Packages.props changed ({string.Join(", ", changedIds.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))}) but no restored test project references those packages; {fallbackSuffix}");
+            return new CpmScope([], idsSummary, $"Directory.Packages.props changed but {Path.GetFileName(unrestored)} has no obj/project.assets.json (not restored), so package usage can't be checked for the whole solution; {fallbackSuffix}");
+        }
+        if (impact.TestProjects.Count == 0)
+        {
+            return new CpmScope([], idsSummary, $"Directory.Packages.props changed ({idsSummary}) but no restored project references those packages; {fallbackSuffix}");
         }
 
-        return new CpmScope(selected, $"Directory.Packages.props changed: {string.Join(", ", changedIds.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))}; running the test projects that use them.");
+        return new CpmScope(impact.TestProjects, idsSummary, $"Directory.Packages.props changed: {idsSummary}; running the test projects that use them.");
     }
 
     /// <summary>
@@ -370,7 +411,10 @@ public static class TestingTools
     /// version between two versions of a Directory.Packages.props file's XML (namespace-agnostic: an SDK-style props
     /// file declares no xmlns, but this tolerates one if present). Pure and synchronous, so it's unit-testable
     /// without git or the filesystem. Null - not throwing - when either document fails to parse as XML: the caller
-    /// falls back to today's whole-solution behavior for a props file it can't safely diff.
+    /// falls back to today's whole-solution behavior for a props file it can't safely diff. Reports only the id
+    /// diff - whether anything ELSE in the file also changed is a separate question, answered by
+    /// <see cref="IsOnlyPackageVersionChange"/>, which the caller checks first before trusting this diff enough to
+    /// narrow on it.
     /// </summary>
     public static IReadOnlySet<string>? DiffPackageVersions(string oldXml, string newXml)
     {
@@ -388,6 +432,48 @@ public static class TestingTools
             if (!newVersions.ContainsKey(id)) changed.Add(id);
         }
         return changed;
+    }
+
+    /// <summary>
+    /// Whether two Directory.Packages.props XML documents differ ONLY in the Version attribute values of their
+    /// &lt;PackageVersion&gt; elements - the only difference <see cref="DiffPackageVersions"/> is safe to narrow on.
+    /// A &lt;PackageReference&gt;, &lt;GlobalPackageReference&gt;, a Condition, a property like
+    /// ManagePackageVersionsCentrally, or any other structural change riding along with a version bump makes this
+    /// false, since none of those are covered by the id diff and narrowing on it anyway could miss whatever that
+    /// other change affects. Comments and whitespace-only text nodes are stripped before comparing, so reformatting
+    /// or a comment edit alongside a version bump doesn't count as "beyond versions". Null - not throwing - when
+    /// either document fails to parse as XML.
+    /// </summary>
+    public static bool? IsOnlyPackageVersionChange(string oldXml, string newXml)
+    {
+        var oldNormalized = TryNormalizeIgnoringPackageVersions(oldXml);
+        var newNormalized = TryNormalizeIgnoringPackageVersions(newXml);
+        if (oldNormalized is null || newNormalized is null) return null;
+        return XNode.DeepEquals(oldNormalized, newNormalized);
+    }
+
+    /// <summary>Parses XML and strips comments, whitespace-only text nodes, and the Version attribute of every
+    /// &lt;PackageVersion&gt; element (namespace-agnostic, matching <see cref="TryParsePackageVersions"/>), leaving
+    /// only what <see cref="IsOnlyPackageVersionChange"/> should actually compare. Null on a parse failure.</summary>
+    private static XDocument? TryNormalizeIgnoringPackageVersions(string xml)
+    {
+        XDocument doc;
+        try
+        {
+            doc = XDocument.Parse(xml, LoadOptions.None);
+        }
+        catch (System.Xml.XmlException)
+        {
+            return null;
+        }
+
+        doc.DescendantNodes().OfType<XComment>().Remove();
+        doc.DescendantNodes().OfType<XText>().Where(t => string.IsNullOrWhiteSpace(t.Value)).Remove();
+        foreach (var element in doc.Descendants().Where(e => e.Name.LocalName == "PackageVersion"))
+        {
+            element.Attributes().FirstOrDefault(a => a.Name.LocalName == "Version")?.Remove();
+        }
+        return doc;
     }
 
     private static Dictionary<string, string>? TryParsePackageVersions(string xml)

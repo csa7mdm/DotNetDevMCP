@@ -83,6 +83,40 @@ public class NuGetPackageEdgeTests : IDisposable
         Assert.Empty(AffectedTestFinder.FindAffectedTestProjects(solution, [libACs]));
     }
 
+    [Theory]
+    [InlineData("""{ "targets": [] }""")]                      // "targets" is an array, not an object
+    [InlineData("""{ "targets": { "net10.0": [] } }""")]        // a TFM entry is an array, not an object
+    [InlineData("[1,2]")]                                       // the whole document isn't an object
+    public void Unexpectedly_shaped_but_valid_json_does_not_throw_and_creates_no_edge(string assetsJson)
+    {
+        var (solution, libACs) = Build(libAProjectXml: DefaultCsproj, assetsJson: assetsJson);
+
+        var thrown = Record.Exception(() => AffectedTestFinder.FindAffectedTestProjects(solution, [libACs]));
+
+        Assert.Null(thrown);
+        Assert.Empty(AffectedTestFinder.FindAffectedTestProjects(solution, [libACs]));
+    }
+
+    [Fact]
+    public void AssetsCache_reads_and_parses_a_project_s_assets_file_at_most_once()
+    {
+        var (_, libACs) = Build(libAProjectXml: DefaultCsproj, assetsJson: AssetsJson(("LibA", "package")));
+        var testsCsprojPath = Path.Combine(_root, "test", "LibA.Tests.csproj");
+        File.WriteAllText(testsCsprojPath, DefaultCsproj);
+        var objDir = Path.Combine(_root, "test", "obj");
+        Directory.CreateDirectory(objDir);
+        File.WriteAllText(Path.Combine(objDir, "project.assets.json"), AssetsJson(("Foo", "package")));
+
+        var cache = new AffectedTestFinder.AssetsCache();
+        var first = cache.Get(testsCsprojPath);
+        var second = cache.Get(testsCsprojPath);
+
+        // ReadAssetsPackageIds allocates a fresh HashSet on every real read; getting back the exact same instance
+        // proves the second Get() was served from the cache instead of re-reading and re-parsing the file.
+        Assert.NotNull(first);
+        Assert.Same(first, second);
+    }
+
     [Fact]
     public void CountUnrestoredTestProjects_counts_test_projects_with_no_assets_file()
     {
