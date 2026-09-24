@@ -9,6 +9,7 @@ using DotNetDevMCP.Analysis.Extensions;
 using DotNetDevMCP.Build.Extensions;
 using DotNetDevMCP.CodeIntelligence.Extensions;
 using DotNetDevMCP.CodeIntelligence.Interfaces;
+using DotNetDevMCP.Core;
 using DotNetDevMCP.Monitoring.Extensions;
 using DotNetDevMCP.Monitoring.Mcp.Tools;
 using DotNetDevMCP.Orchestration.Extensions;
@@ -40,6 +41,7 @@ public static class Program
         var buildConfigurationOption = new Option<string?>("--build-configuration") { Description = "Build configuration used when loading the solution (Debug, Release)." };
         var gitCommitEditsOption = new Option<bool>("--git-commit-edits") { Description = "Let edit tools (RenameSymbol, OverwriteMember, AddMember, MoveMember, FindAndReplace, CreateRoslynDocument, OverwriteRoslynDocument, ManageUsings, ManageAttributes) create a git branch and commit after each change, and enable SharpTool_Undo. Off by default: edits are still applied to disk and compile-checked, they just don't touch git or your current branch." };
         var disableGitOption = new Option<bool>("--disable-git") { Description = "Deprecated, no-op. Git integration in code-intelligence tools is off by default; use --git-commit-edits to opt in." };
+        var cleanEnvOption = new Option<bool>("--clean-env") { Description = "Give every dotnet/git child process a minimal, allow-listed environment instead of inheriting this server's full one. Scrubs environment variables only; it is not a sandbox: child processes still run with your user's file-system and network access. Off by default." };
         var enableOption = new Option<string[]>("--enable")
         {
             Description = "Enable optional tool groups, off by default: 'git' (repo status/branch/stage/commit/push/pull/log/diff) and 'monitoring' (process performance/GC/health/profiling). Comma-separated and/or repeated, e.g. \"--enable git,monitoring\" or \"--enable git --enable monitoring\".",
@@ -50,7 +52,7 @@ public static class Program
 
         var root = new RootCommand("DotNetDevMCP - MCP server for .NET development: Roslyn code intelligence, build, affected-test selection, git, orchestration.")
         {
-            httpOption, portOption, logDirOption, logLevelOption, loadSolutionOption, buildConfigurationOption, gitCommitEditsOption, disableGitOption, enableOption
+            httpOption, portOption, logDirOption, logLevelOption, loadSolutionOption, buildConfigurationOption, gitCommitEditsOption, disableGitOption, enableOption, cleanEnvOption
         };
 
         var parsed = root.Parse(args);
@@ -72,12 +74,24 @@ public static class Program
         string[] enabledGroups = parsed.GetValue(enableOption) ?? [];
         bool enableGit = enabledGroups.Contains("git");
         bool enableMonitoring = enabledGroups.Contains("monitoring");
+        bool cleanEnv = parsed.GetValue(cleanEnvOption);
 
         Log.Logger = BuildLogger(logLevel, logDir);
 
         if (disableGitLegacyFlag)
         {
             Log.Warning("--disable-git is deprecated and has no effect: git integration is already off by default. Use --git-commit-edits to opt into it.");
+        }
+
+        if (cleanEnv)
+        {
+            ChildProcess.CleanEnvironment = true;
+            var (kept, dropped, droppedNames) = ChildProcess.DescribeEnvironment();
+            Log.Information(
+                "--clean-env enabled: dotnet/git child processes get a minimal environment ({Kept} variables kept, {Dropped} dropped). " +
+                "Scrubs environment variables only; it is not a sandbox: child processes still run with your user's file-system and network access.",
+                kept, dropped);
+            Log.Debug("Dropped environment variables: {Names}", string.Join(", ", droppedNames));
         }
 
         try

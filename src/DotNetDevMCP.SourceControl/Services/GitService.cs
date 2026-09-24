@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using DotNetDevMCP.Core;
 
 namespace DotNetDevMCP.SourceControl.Services;
 
@@ -64,18 +65,18 @@ public class GitService
     {
         try
         {
-            var rootResult = await RunGitCommandAsync(repoPath, "rev-parse --show-toplevel", cancellationToken);
+            var rootResult = await RunGitCommandAsync(repoPath, ["rev-parse", "--show-toplevel"], cancellationToken);
             if (!rootResult.Success)
                 throw new InvalidOperationException("Not a git repository");
             var rootPath = rootResult.Output.Trim();
 
-            var branchResult = await RunGitCommandAsync(rootPath, "branch --show-current", cancellationToken);
+            var branchResult = await RunGitCommandAsync(rootPath, ["branch", "--show-current"], cancellationToken);
             var currentBranch = branchResult.Output.Trim();
 
-            var statusResult = await RunGitCommandAsync(rootPath, "status --porcelain", cancellationToken);
+            var statusResult = await RunGitCommandAsync(rootPath, ["status", "--porcelain"], cancellationToken);
             var changes = ParseStatus(statusResult.Output);
 
-            var remoteResult = await RunGitCommandAsync(rootPath, "remote", cancellationToken);
+            var remoteResult = await RunGitCommandAsync(rootPath, ["remote"], cancellationToken);
             var remotes = remoteResult.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
             var (ahead, behind) = await GetAheadBehindCountAsync(rootPath, currentBranch, cancellationToken);
@@ -101,7 +102,7 @@ public class GitService
     /// </summary>
     public async Task<string> GetCurrentBranchAsync(string repoPath, CancellationToken cancellationToken = default)
     {
-        var result = await RunGitCommandAsync(repoPath, "branch --show-current", cancellationToken);
+        var result = await RunGitCommandAsync(repoPath, ["branch", "--show-current"], cancellationToken);
         EnsureSuccess(result);
         return result.Output.Trim();
     }
@@ -111,8 +112,8 @@ public class GitService
     /// </summary>
     public async Task<IEnumerable<string>> GetBranchesAsync(string repoPath, bool includeRemote = false, CancellationToken cancellationToken = default)
     {
-        var command = includeRemote ? "branch -a" : "branch";
-        var result = await RunGitCommandAsync(repoPath, command, cancellationToken);
+        var args = includeRemote ? new[] { "branch", "-a" } : new[] { "branch" };
+        var result = await RunGitCommandAsync(repoPath, args, cancellationToken);
         EnsureSuccess(result);
 
         return result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
@@ -125,11 +126,13 @@ public class GitService
     /// </summary>
     public async Task<GitResult> CreateBranchAsync(string repoPath, string branchName, string? startPoint = null, CancellationToken cancellationToken = default)
     {
-        var command = startPoint != null 
-            ? $"checkout -b {branchName} {startPoint}" 
-            : $"checkout -b {branchName}";
-        
-        return await RunGitCommandAsync(repoPath, command, cancellationToken);
+        var refError = GitRefValidation.Validate(branchName, nameof(branchName)) ?? GitRefValidation.Validate(startPoint, nameof(startPoint));
+        if (refError != null) return Failed(refError);
+
+        var args = new List<string> { "checkout", "-b", branchName };
+        if (startPoint != null) args.Add(startPoint);
+
+        return await RunGitCommandAsync(repoPath, args, cancellationToken);
     }
 
     /// <summary>
@@ -137,7 +140,10 @@ public class GitService
     /// </summary>
     public async Task<GitResult> CheckoutBranchAsync(string repoPath, string branchName, CancellationToken cancellationToken = default)
     {
-        return await RunGitCommandAsync(repoPath, $"checkout {branchName}", cancellationToken);
+        var refError = GitRefValidation.Validate(branchName, nameof(branchName));
+        if (refError != null) return Failed(refError);
+
+        return await RunGitCommandAsync(repoPath, ["checkout", branchName], cancellationToken);
     }
 
     /// <summary>
@@ -145,8 +151,10 @@ public class GitService
     /// </summary>
     public async Task<GitResult> StageAsync(string repoPath, IEnumerable<string> files, CancellationToken cancellationToken = default)
     {
-        var fileList = string.Join(" ", files.Select(f => $"\"{f}\""));
-        return await RunGitCommandAsync(repoPath, $"add {fileList}", cancellationToken);
+        // "--" ends option parsing: a file named e.g. "-x" is then unambiguously a pathspec, not a flag.
+        var args = new List<string> { "add", "--" };
+        args.AddRange(files);
+        return await RunGitCommandAsync(repoPath, args, cancellationToken);
     }
 
     /// <summary>
@@ -154,7 +162,7 @@ public class GitService
     /// </summary>
     public async Task<GitResult> StageAllAsync(string repoPath, CancellationToken cancellationToken = default)
     {
-        return await RunGitCommandAsync(repoPath, "add -A", cancellationToken);
+        return await RunGitCommandAsync(repoPath, ["add", "-A"], cancellationToken);
     }
 
     /// <summary>
@@ -162,11 +170,12 @@ public class GitService
     /// </summary>
     public async Task<GitResult> CommitAsync(string repoPath, string message, bool allowEmpty = false, CancellationToken cancellationToken = default)
     {
-        var command = allowEmpty 
-            ? $"commit --allow-empty -m \"{message}\"" 
-            : $"commit -m \"{message}\"";
-        
-        return await RunGitCommandAsync(repoPath, command, cancellationToken);
+        var args = new List<string> { "commit" };
+        if (allowEmpty) args.Add("--allow-empty");
+        args.Add("-m");
+        args.Add(message);
+
+        return await RunGitCommandAsync(repoPath, args, cancellationToken);
     }
 
     /// <summary>
@@ -174,12 +183,15 @@ public class GitService
     /// </summary>
     public async Task<GitResult> PushAsync(string repoPath, string? remote = null, string? branch = null, bool force = false, CancellationToken cancellationToken = default)
     {
-        var command = "push";
-        if (force) command += " --force";
-        if (remote != null) command += $" {remote}";
-        if (branch != null) command += $" {branch}";
+        var refError = GitRefValidation.Validate(remote, nameof(remote)) ?? GitRefValidation.Validate(branch, nameof(branch));
+        if (refError != null) return Failed(refError);
 
-        return await RunGitCommandAsync(repoPath, command, cancellationToken);
+        var args = new List<string> { "push" };
+        if (force) args.Add("--force");
+        if (remote != null) args.Add(remote);
+        if (branch != null) args.Add(branch);
+
+        return await RunGitCommandAsync(repoPath, args, cancellationToken);
     }
 
     /// <summary>
@@ -187,11 +199,14 @@ public class GitService
     /// </summary>
     public async Task<GitResult> PullAsync(string repoPath, string? remote = null, string? branch = null, CancellationToken cancellationToken = default)
     {
-        var command = "pull";
-        if (remote != null) command += $" {remote}";
-        if (branch != null) command += $" {branch}";
+        var refError = GitRefValidation.Validate(remote, nameof(remote)) ?? GitRefValidation.Validate(branch, nameof(branch));
+        if (refError != null) return Failed(refError);
 
-        return await RunGitCommandAsync(repoPath, command, cancellationToken);
+        var args = new List<string> { "pull" };
+        if (remote != null) args.Add(remote);
+        if (branch != null) args.Add(branch);
+
+        return await RunGitCommandAsync(repoPath, args, cancellationToken);
     }
 
     /// <summary>
@@ -199,8 +214,11 @@ public class GitService
     /// </summary>
     public async Task<GitResult> FetchAsync(string repoPath, string? remote = null, CancellationToken cancellationToken = default)
     {
-        var command = remote != null ? $"fetch {remote}" : "fetch --all";
-        return await RunGitCommandAsync(repoPath, command, cancellationToken);
+        var refError = GitRefValidation.Validate(remote, nameof(remote));
+        if (refError != null) return Failed(refError);
+
+        var args = remote != null ? new[] { "fetch", remote } : new[] { "fetch", "--all" };
+        return await RunGitCommandAsync(repoPath, args, cancellationToken);
     }
 
     /// <summary>
@@ -208,11 +226,13 @@ public class GitService
     /// </summary>
     public async Task<IEnumerable<GitCommit>> GetLogAsync(string repoPath, int count = 10, string? branch = null, CancellationToken cancellationToken = default)
     {
-        var format = "--pretty=format:%H|%an|%ae|%ad|%s";
-        var command = $"log {format} -{count}";
-        if (branch != null) command += $" {branch}";
+        var refError = GitRefValidation.Validate(branch, nameof(branch));
+        if (refError != null) throw new InvalidOperationException(refError);
 
-        var result = await RunGitCommandAsync(repoPath, command, cancellationToken);
+        var args = new List<string> { "log", "--pretty=format:%H|%an|%ae|%ad|%s", $"-{count}" };
+        if (branch != null) args.Add(branch);
+
+        var result = await RunGitCommandAsync(repoPath, args, cancellationToken);
         EnsureSuccess(result);
 
         return result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
@@ -233,37 +253,55 @@ public class GitService
     /// </summary>
     public async Task<GitResult> DiffAsync(string repoPath, string? file = null, string? commit1 = null, string? commit2 = null, CancellationToken cancellationToken = default)
     {
-        var command = "diff";
-        if (commit1 != null && commit2 != null)
-            command = $"diff {commit1} {commit2}";
-        else if (commit1 != null)
-            command = $"diff {commit1}";
-        
-        if (file != null)
-            command += $" -- \"{file}\"";
+        var refError = GitRefValidation.Validate(commit1, nameof(commit1)) ?? GitRefValidation.Validate(commit2, nameof(commit2));
+        if (refError != null) return Failed(refError);
 
-        return await RunGitCommandAsync(repoPath, command, cancellationToken);
+        var args = new List<string> { "diff" };
+        if (commit1 != null) args.Add(commit1);
+        if (commit2 != null) args.Add(commit2);
+        // "--" ends option/ref parsing: whatever follows is unambiguously the pathspec, never re-parsed as a ref or flag.
+        if (file != null) { args.Add("--"); args.Add(file); }
+
+        return await RunGitCommandAsync(repoPath, args, cancellationToken);
     }
 
+    private static GitResult Failed(string error) => new(Success: false, Output: string.Empty, Error: error, Duration: TimeSpan.Zero);
+
     /// <summary>
-    /// Runs a git command
+    /// Runs a git command. Arguments go through <see cref="ProcessStartInfo.ArgumentList"/> so each value is
+    /// exactly one argument (.NET does the quoting) and can never be split into extra arguments the way
+    /// concatenating into a single argument string would allow, e.g. a diff base of "--output=C:/x.txt".
     /// </summary>
-    private async Task<GitResult> RunGitCommandAsync(string repoPath, string arguments, CancellationToken cancellationToken = default)
+    private async Task<GitResult> RunGitCommandAsync(string repoPath, IReadOnlyList<string> arguments, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
-        
+
+        if (string.IsNullOrWhiteSpace(repoPath))
+            return Failed("repoPath is required.");
+
+        string fullRepoPath;
+        try
+        {
+            fullRepoPath = Path.GetFullPath(repoPath);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return Failed($"Invalid repoPath '{repoPath}': {ex.Message}");
+        }
+
         try
         {
             var startInfo = new ProcessStartInfo
             {
                 FileName = "git",
-                Arguments = arguments,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
-                WorkingDirectory = repoPath
+                WorkingDirectory = fullRepoPath
             };
+            foreach (var arg in arguments) startInfo.ArgumentList.Add(arg);
+            ChildProcess.Prepare(startInfo);
 
             using var process = new Process { StartInfo = startInfo };
             var output = new List<string>();
@@ -348,7 +386,9 @@ public class GitService
 
     private async Task<(int Ahead, int Behind)> GetAheadBehindCountAsync(string repoPath, string branch, CancellationToken cancellationToken = default)
     {
-        var result = await RunGitCommandAsync(repoPath, $"rev-list --left-right --count origin/{branch}...{branch}", cancellationToken);
+        // branch comes from our own "branch --show-current" output, not a caller-supplied value, so it
+        // doesn't need GitRefValidation; it's still one ArgumentList entry, so no quoting is needed either.
+        var result = await RunGitCommandAsync(repoPath, ["rev-list", "--left-right", "--count", $"origin/{branch}...{branch}"], cancellationToken);
         if (!result.Success)
             return (0, 0);
 
