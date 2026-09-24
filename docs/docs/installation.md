@@ -1,6 +1,6 @@
 ---
 title: "Installation"
-description: "You need the [."
+description: "Install DotNetDevMCP in Claude Code, VS Code, Visual Studio, Cursor or Claude Desktop. Requires the .NET 10 SDK."
 ---
 # Installation
 

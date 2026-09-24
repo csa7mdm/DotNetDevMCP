@@ -1,6 +1,6 @@
 ---
 title: "Tutorial"
-description: "This walks through one realistic session on your own solution: understand some code, change it safely, and check the"
+description: "One realistic session on your own solution with DotNetDevMCP: understand some code, change it safely, and check the change with affected tests."
 ---
 # Tutorial: your first session
 

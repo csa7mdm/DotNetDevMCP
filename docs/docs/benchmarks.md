@@ -1,6 +1,6 @@
 ---
 title: "Benchmarks"
-description: "Measured on [Polly](https://github."
+description: "Measured on Polly: affected-test selection speed, fault-injection recall and reference answer size compared with grep."
 ---
 # Benchmarks
 

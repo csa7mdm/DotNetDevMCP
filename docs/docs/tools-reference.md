@@ -1,6 +1,6 @@
 ---
 title: "Tools Reference"
-description: "Generated from the server's own `tools/list` (0."
+description: "Every DotNetDevMCP tool and its parameters, generated from the server's own tools/list."
 ---
 # Tools reference
 

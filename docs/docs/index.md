@@ -1,6 +1,6 @@
 ---
 title: "DotNetDevMCP"
-description: "DotNetDevMCP is an [MCP](https://modelcontextprotocol."
+description: "DotNetDevMCP is an open-source MCP server that gives AI coding agents Roslyn's compiler view of a .NET solution."
 ---
 # DotNetDevMCP
 

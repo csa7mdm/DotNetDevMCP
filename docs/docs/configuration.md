@@ -1,6 +1,6 @@
 ---
 title: "Configuration"
-description: "Server options go after `--` in a `dnx` command, or straight after `dotnetdevmcp` for a global install:"
+description: "DotNetDevMCP server options: loading a solution at startup, enabling git and monitoring tools, HTTP mode, logging and --clean-env."
 ---
 # Configuration
 

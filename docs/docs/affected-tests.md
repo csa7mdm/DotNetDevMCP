@@ -1,6 +1,6 @@
 ---
 title: "Affected tests"
-description: "`dotnet_test_affected` answers \"which tests can my change break?"
+description: "dotnet_test_affected answers \"which tests can my change break?\" with the compiler, then runs only those tests."
 ---
 # Affected tests
 

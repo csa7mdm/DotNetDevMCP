@@ -1,6 +1,6 @@
 ---
 title: "Architecture"
-description: "A map for contributors."
+description: "A map of DotNetDevMCP's projects and how a tool call flows through them, for contributors."
 ---
 # Architecture
 

@@ -1,6 +1,6 @@
 ---
 title: "Troubleshooting"
-description: "Start the server with `--log-level Debug --log-directory <dir>` to get logs for any of these."
+description: "Fixes for DotNetDevMCP problems: the server not starting, solutions that don't load, affected-test surprises and rejected values."
 ---
 # Troubleshooting
 
