@@ -44,57 +44,47 @@ We practice coordinated disclosure:
 - Once a fix is ready, we will coordinate a release timeline
 - We will publicly credit you for the discovery (unless you prefer to remain anonymous)
 
-## Security Best Practices
+## Security model
 
-When using DotNetDevMCP:
+DotNetDevMCP is a **local developer tool**. It runs as you, on your machine, for an AI agent you chose to trust with your
+code. Read this before using it on code you don't trust or exposing it beyond your own machine.
 
-1. **Keep Dependencies Updated**
-   - Regularly update to the latest version
-   - Monitor security advisories for .NET and dependencies
+### What it can do on your machine
 
-2. **Validate Input**
-   - Always validate and sanitize user input
-   - Be cautious with paths and file operations
+- **Run code.** `dotnet build` and `dotnet test` execute whatever the solution contains: MSBuild targets (`<Exec>`), build
+  tasks, source generators, test code. If the agent (or text in the repository steering the agent, i.e. prompt injection)
+  writes a malicious test or `.csproj`, running the build runs it. This is true of `dotnet build` in any terminal; the
+  server adds no sandbox.
+- **Read and write files.** Roslyn edit tools write only inside the loaded solution's directory (paths are normalized, so
+  `..` and look-alike sibling folders are rejected). Build, test and git tools accept any path you or the agent give them.
+- **See your environment.** Child processes inherit the server's environment variables, including tokens and cloud
+  credentials, unless you start the server with `--clean-env`.
 
-3. **Least Privilege**
-   - Run DotNetDevMCP with minimal required permissions
-   - Avoid running as administrator/root unless necessary
+For a local agent that already has a shell (Claude Code, Cursor, Copilot agent mode), none of this is new power: the agent
+could run the same commands itself. What the server guarantees is that its own tools don't widen that: arguments are passed
+to `dotnet` and `git` as separate arguments and validated (framework, configuration, runtime, git refs), so a crafted value
+can't add options such as `-p:CustomBeforeMicrosoftCommonTargets=...` or `--output=...`.
 
-4. **Secure Configuration**
-   - Use secure defaults
-   - Review configuration for security implications
-   - Keep sensitive data (API keys, tokens) out of source control
+### Options that reduce exposure
 
-5. **Network Security**
-   - Use HTTPS for all network communications
-   - Validate SSL/TLS certificates
-   - Use secure authentication mechanisms
+| Option | What it does | What it does not do |
+|---|---|---|
+| Default (git and monitoring tools off) | Fewer tools for the agent to misuse | - |
+| `--clean-env` | Child processes get a minimal environment: tokens, API keys and cloud credentials in environment variables are not passed on | Not a sandbox: files such as `~/.aws/credentials` and the network are still reachable |
+| Edits stay in the solution directory | Roslyn edit tools refuse paths outside it | Doesn't restrict what a build does |
 
-## Known Security Considerations
+### Untrusted code
 
-### File System Access
-DotNetDevMCP requires file system access to:
-- Read source code files
-- Execute build and test commands
-- Write temporary files
+For repositories you don't trust (a pull request from a stranger, a downloaded sample), run the agent and DotNetDevMCP inside a
+container or VM with only that repository mounted, no credentials, and restricted network. The server cannot provide that
+isolation itself.
 
-**Mitigation**: Run in sandboxed environments when processing untrusted code.
+### `--http` mode
 
-### Code Execution
-DotNetDevMCP executes:
-- `dotnet build` commands
-- `dotnet test` commands
-- MSBuild scripts
-
-**Mitigation**: Validate all inputs and use isolated build environments.
-
-### Dependencies
-DotNetDevMCP depends on:
-- .NET Runtime
-- Roslyn compiler
-- Third-party NuGet packages
-
-**Mitigation**: Regularly update dependencies and monitor for vulnerabilities.
+HTTP mode listens on `localhost` only and has **no authentication, TLS or origin checks**. Anyone who can reach the port can
+build, test and edit with your privileges. Don't forward the port, put it behind a proxy, or run it on a shared machine.
+A multi-user or hosted deployment would need authentication, a sandbox per session and audit logging; DotNetDevMCP doesn't
+provide those today.
 
 ## Security Updates
 
