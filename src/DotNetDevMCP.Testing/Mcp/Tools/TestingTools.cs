@@ -1,9 +1,11 @@
 // Copyright (c) 2025 Ahmed Mustafa
 
 using System.ComponentModel;
+using System.Xml.Linq;
 using DotNetDevMCP.CodeIntelligence.Interfaces;
 using DotNetDevMCP.Core;
 using DotNetDevMCP.Core.Models;
+using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 
@@ -86,6 +88,8 @@ public static class TestingTools
         logger.LogDebug("dotnet_test_affected: resolved {Count} changed files in {Ms} ms", files.Length, sw.ElapsedMilliseconds);
         var solution = solutions.CurrentSolution;
         var changed = files.Select(f => Path.GetFullPath(Path.Combine(solutionDir, f))).Where(f => !DocumentationExtensions.Contains(Path.GetExtension(f))).ToArray();
+        // Never traced at any layer (not a document, not a project-owned file, not build-wide): noted, not analyzed.
+        var dllChanged = changed.Where(f => f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)).ToArray();
         // The walk traces only C# the solution compiles. Anything else (a .csproj, .razor, appsettings.json, a deleted file)
         // can still break tests, so it switches to the project fallback below instead of being dropped.
         files = changed.Where(f => f.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) && !solution.GetDocumentIdsWithFilePath(f).IsEmpty).ToArray();
@@ -127,13 +131,30 @@ public static class TestingTools
                 ? $"Selection stopped after {maxSelectionSeconds}s and {selection.SymbolsSearched} symbols: this change reaches too much code to trace cheaply."
                 : $"Selected {affected.Count} of {selection.TotalTestMethods} test methods ({selectedFraction:P0}), above the {maxSelectedFraction:P0} threshold: a selection this large is likely slower filtered than running the whole solution.";
 
+            // Central Package Management precision: a Directory.Packages.props change is build-wide in general (it can
+            // affect any project), but when it's the ONLY build-wide file that changed, diffing its previous and current
+            // XML tells us exactly which package ids moved - and the assets-based edge above can then tell us exactly
+            // which test projects use them, instead of falling back to the whole solution.
+            var buildWideFiles = untraced.Where(IsBuildWideFile).ToArray();
+            var cpmOnly = buildWideChange && buildWideFiles.Length == 1
+                && Path.GetFileName(buildWideFiles[0]).Equals("Directory.Packages.props", StringComparison.OrdinalIgnoreCase);
+            var cpm = cpmOnly ? await TryCentralPackageManagementScopeAsync(solution, solutionDir, buildWideFiles[0], gitBase, cancellationToken) : null;
+
             var reachableProjects = AffectedTestFinder.FindAffectedTestProjects(solution, files.Concat(untraced));
             allTestProjects = AffectedTestFinder.AllTestProjectFilePaths(solution);
 
-            if (buildWideChange || reachableProjects.Count == 0 || reachableProjects.Count >= allTestProjects.Count)
+            if (cpm is { Projects.Count: > 0 } cpmHit)
+            {
+                scope = AffectedRunScope.Projects;
+                projectsToRun = cpmHit.Projects;
+                note = cpmHit.Note;
+            }
+            else if (buildWideChange || reachableProjects.Count == 0 || reachableProjects.Count >= allTestProjects.Count)
             {
                 scope = AffectedRunScope.Solution;
-                note = buildWideChange
+                note = cpm is { } cpmMiss
+                    ? $"{reason} {cpmMiss.Note}"
+                    : buildWideChange
                     ? $"{reason} A build-wide file changed, which can affect every project; running the whole solution instead."
                     : $"{reason} Every test project in the solution is reachable from the change (or none could be resolved to a project); running the whole solution instead.";
             }
@@ -147,6 +168,19 @@ public static class TestingTools
                     "depends on the changed code only through a NuGet package reference, with no ProjectReference, is not " +
                     "detected by this fallback and may be missed.";
             }
+        }
+
+        if (scope == AffectedRunScope.Projects)
+        {
+            var unrestoredCount = AffectedTestFinder.CountUnrestoredTestProjects(solution);
+            if (unrestoredCount > 0)
+            {
+                note = $"{note} {unrestoredCount} test project(s) have no obj/project.assets.json (not restored), so package references for them are unknown.";
+            }
+        }
+        if (dllChanged.Length > 0)
+        {
+            note = note is null ? "Binary references (.dll) are not traced." : $"{note} Binary references (.dll) are not traced.";
         }
         var ranWholeSolution = scope == AffectedRunScope.Solution; // kept for compatibility; true only when the whole solution ran.
 
@@ -265,5 +299,113 @@ public static class TestingTools
             .Select(l => gitBase is null ? l[3..].Trim() : l.Trim())     // porcelain lines are "XY path"
             .Select(rel => Path.Combine(root, rel))
             .ToArray();
+    }
+
+    /// <summary>Result of <see cref="TryCentralPackageManagementScopeAsync"/>: which test projects to run and the note
+    /// to report for it. Projects is empty when precision wasn't possible - Note then explains why, and the caller
+    /// falls back to running the whole solution exactly as it did before this precision existed.</summary>
+    private sealed record CpmScope(IReadOnlyList<string> Projects, string Note);
+
+    /// <summary>
+    /// Central Package Management precision for a Directory.Packages.props change: diffs its previous and current
+    /// version (via git) to the package ids that were actually added, removed, or changed version, then selects only
+    /// the test projects whose restored project.assets.json references one of them (see
+    /// <see cref="AffectedTestFinder.FindTestProjectsUsingPackages"/> - its "targets" section is already transitive).
+    /// Falls back to an empty result - explained in its Note - when git isn't available, either version of the file
+    /// can't be read or parsed, or no restored test project uses the changed ids; the caller then runs the whole
+    /// solution exactly as it did before this precision existed.
+    /// </summary>
+    private static async Task<CpmScope> TryCentralPackageManagementScopeAsync(
+        Solution solution, string solutionDir, string propsFilePath, string? gitBase, CancellationToken ct)
+    {
+        const string fallbackSuffix = "running the whole solution instead.";
+        string newXml;
+        try
+        {
+            newXml = await File.ReadAllTextAsync(propsFilePath, ct);
+        }
+        catch (IOException)
+        {
+            return new CpmScope([], $"Directory.Packages.props changed but could not be read; {fallbackSuffix}");
+        }
+
+        // Same argument-list git invocation the file already uses (GitChangedFilesAsync): an ArgumentList, not a
+        // concatenated string, so a ref that starts with "-" can't be parsed as an option.
+        var (rootExit, rootOut, _, _) = await TestRunner.RunProcessAsync("git", ["rev-parse", "--show-toplevel"], ct, solutionDir);
+        if (rootExit != 0)
+        {
+            return new CpmScope([], $"Directory.Packages.props changed but git is not available to diff it; {fallbackSuffix}");
+        }
+        var root = rootOut.Trim();
+        var relative = Path.GetRelativePath(root, propsFilePath).Replace('\\', '/');
+        var gitRef = gitBase ?? "HEAD";
+
+        var (showExit, showOut, showErr, _) = await TestRunner.RunProcessAsync("git", ["show", $"{gitRef}:{relative}"], ct, root);
+        if (showExit != 0)
+        {
+            return new CpmScope([], $"Directory.Packages.props changed but its previous version ({gitRef}:{relative}) could not be read from git ({showErr.Trim()}); {fallbackSuffix}");
+        }
+
+        var changedIds = DiffPackageVersions(showOut, newXml);
+        if (changedIds is null)
+        {
+            return new CpmScope([], $"Directory.Packages.props changed but its XML could not be diffed; {fallbackSuffix}");
+        }
+        if (changedIds.Count == 0)
+        {
+            return new CpmScope([], $"Directory.Packages.props changed but no package version actually differs between {gitRef} and the working tree; {fallbackSuffix}");
+        }
+
+        var selected = AffectedTestFinder.FindTestProjectsUsingPackages(solution, changedIds);
+        if (selected.Count == 0)
+        {
+            return new CpmScope([], $"Directory.Packages.props changed ({string.Join(", ", changedIds.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))}) but no restored test project references those packages; {fallbackSuffix}");
+        }
+
+        return new CpmScope(selected, $"Directory.Packages.props changed: {string.Join(", ", changedIds.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))}; running the test projects that use them.");
+    }
+
+    /// <summary>
+    /// Package ids whose &lt;PackageVersion Include="X" Version="V" /&gt; entry was added, removed, or changed
+    /// version between two versions of a Directory.Packages.props file's XML (namespace-agnostic: an SDK-style props
+    /// file declares no xmlns, but this tolerates one if present). Pure and synchronous, so it's unit-testable
+    /// without git or the filesystem. Null - not throwing - when either document fails to parse as XML: the caller
+    /// falls back to today's whole-solution behavior for a props file it can't safely diff.
+    /// </summary>
+    public static IReadOnlySet<string>? DiffPackageVersions(string oldXml, string newXml)
+    {
+        var oldVersions = TryParsePackageVersions(oldXml);
+        var newVersions = TryParsePackageVersions(newXml);
+        if (oldVersions is null || newVersions is null) return null;
+
+        var changed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (id, version) in newVersions)
+        {
+            if (!oldVersions.TryGetValue(id, out var oldVersion) || !string.Equals(oldVersion, version, StringComparison.Ordinal)) changed.Add(id);
+        }
+        foreach (var id in oldVersions.Keys)
+        {
+            if (!newVersions.ContainsKey(id)) changed.Add(id);
+        }
+        return changed;
+    }
+
+    private static Dictionary<string, string>? TryParsePackageVersions(string xml)
+    {
+        try
+        {
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var element in XDocument.Parse(xml).Descendants().Where(e => e.Name.LocalName == "PackageVersion"))
+            {
+                var include = element.Attribute("Include")?.Value;
+                var version = element.Attribute("Version")?.Value;
+                if (!string.IsNullOrEmpty(include) && version is not null) result[include] = version;
+            }
+            return result;
+        }
+        catch (System.Xml.XmlException)
+        {
+            return null;
+        }
     }
 }

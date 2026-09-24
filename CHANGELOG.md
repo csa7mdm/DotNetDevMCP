@@ -19,6 +19,16 @@ All notable changes to DotNetDevMCP are documented here. The format follows
   that forwards the original `Origin`, or a non-browser client that happens to set one. `--http` still has no
   authentication or TLS and still shouldn't be exposed beyond localhost.
 
+### Added
+- `dotnet_test_affected`'s project fallback now follows NuGet package references, not just `ProjectReference`s: when a
+  test project's restored `obj/project.assets.json` references another solution project's package id (a literal
+  `<PackageId>`, one from the nearest `Directory.Build.props`, or the assembly name), that test project is selected
+  even with no `ProjectReference` between them. A change to only `Directory.Packages.props` is narrowed, via the same
+  assets data, to the test projects that use the package ids whose version actually moved (diffed against git),
+  instead of running the whole solution; the note explains why when it can't (git unavailable, the file doesn't
+  parse, or no restored test project uses those ids). Test projects with no `obj/project.assets.json` (not restored)
+  are called out in the note when the run falls back to whole test projects.
+
 ## [0.3.3] - 2026-09-24
 
 Prompted by an external evaluation; each claim was checked against the code first.

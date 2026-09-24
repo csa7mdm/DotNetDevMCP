@@ -1,6 +1,8 @@
 // Copyright (c) 2025 Ahmed Mustafa
 
 using System.Collections.Immutable;
+using System.Text.Json;
+using System.Xml.Linq;
 using DotNetDevMCP.CodeIntelligence.Interfaces;
 using DotNetDevMCP.Core;
 using DotNetDevMCP.Core.Models;
@@ -229,6 +231,7 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
                 list.Add(project.Id);
             }
         }
+        AddPackageEdges(solution, dependents);
 
         var reachable = new HashSet<ProjectId>(changedProjectIds);
         var frontier = new Queue<ProjectId>(changedProjectIds);
@@ -240,6 +243,161 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
 
         return reachable.Select(solution.GetProject).OfType<Project>().Where(IsRunnableTestProject)
             .Select(p => p.FilePath).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>
+    /// Reverse edges from a solution project P to a test project that consumes P only through a restored NuGet
+    /// PackageReference - no Roslyn ProjectReference at all - discovered from the test project's
+    /// obj/project.assets.json. Added into the same reverse-edge map <see cref="FindAffectedTestProjects"/> already
+    /// builds from ProjectReferences, so its BFS covers both kinds of edge without any change to the walk itself.
+    /// ponytail: this only follows package ids that match another SOLUTION project's resolved packageId. A test
+    /// project that depends on a third-party (non-solution) package is unaffected either way, so it's out of scope.
+    /// </summary>
+    private static void AddPackageEdges(Solution solution, Dictionary<ProjectId, List<ProjectId>> dependents)
+    {
+        var solutionDir = solution.FilePath is { } solutionPath ? Path.GetDirectoryName(solutionPath) : null;
+
+        var packageIdToProjectIds = new Dictionary<string, List<ProjectId>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var project in solution.Projects)
+        {
+            var packageId = GetPackageId(project, solutionDir);
+            if (!packageIdToProjectIds.TryGetValue(packageId, out var producers)) packageIdToProjectIds[packageId] = producers = [];
+            producers.Add(project.Id);
+        }
+
+        foreach (var group in solution.Projects.Where(IsTestProject).GroupBy(p => p.FilePath))
+        {
+            if (group.Key is not { } testProjectPath) continue; // no file on disk: no obj folder to read assets from.
+            var projectDir = Path.GetDirectoryName(testProjectPath);
+            if (projectDir is null) continue;
+            var packageIds = ReadAssetsPackageIds(Path.Combine(projectDir, "obj", "project.assets.json"));
+            if (packageIds.Count == 0) continue;
+
+            var testProjectIds = group.Select(p => p.Id).ToList();
+            foreach (var packageId in packageIds)
+            {
+                if (!packageIdToProjectIds.TryGetValue(packageId, out var producers)) continue;
+                foreach (var producerId in producers)
+                {
+                    if (!dependents.TryGetValue(producerId, out var consumers)) dependents[producerId] = consumers = [];
+                    foreach (var testProjectId in testProjectIds) if (!consumers.Contains(testProjectId)) consumers.Add(testProjectId);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Test projects (dedupe by file path across TFM variants) whose obj/project.assets.json "targets" section
+    /// references any of the given package ids. The targets section is already transitive, so this also finds a
+    /// project that depends on a changed package only via another package in its own graph. Used by the Central
+    /// Package Management precision path in <c>TestingTools.RunAffected</c>.
+    /// </summary>
+    public static IReadOnlyList<string> FindTestProjectsUsingPackages(Solution solution, IReadOnlySet<string> packageIds)
+    {
+        var results = new List<string>();
+        foreach (var group in solution.Projects.Where(IsTestProject).GroupBy(p => p.FilePath))
+        {
+            if (group.Key is not { } testProjectPath) continue;
+            var projectDir = Path.GetDirectoryName(testProjectPath);
+            if (projectDir is null) continue;
+            var referenced = ReadAssetsPackageIds(Path.Combine(projectDir, "obj", "project.assets.json"));
+            if (referenced.Overlaps(packageIds)) results.Add(testProjectPath);
+        }
+        return results;
+    }
+
+    /// <summary>
+    /// Test projects (dedupe by file path across TFM variants) with no obj/project.assets.json at all - i.e. never
+    /// restored - for whom <see cref="AddPackageEdges"/> and <see cref="FindTestProjectsUsingPackages"/> cannot see
+    /// any package reference. Surfaced in the affected-test note so a package-mediated edge that was missed reads as
+    /// "not restored", not as "this project doesn't depend on the change".
+    /// </summary>
+    public static int CountUnrestoredTestProjects(Solution solution) =>
+        solution.Projects.Where(IsTestProject).Select(p => p.FilePath).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count(path => !File.Exists(Path.Combine(Path.GetDirectoryName(path)!, "obj", "project.assets.json")));
+
+    /// <summary>
+    /// The package id a solution project would publish as, for matching against project.assets.json package
+    /// entries: a literal &lt;PackageId&gt; in the project file, else in the nearest Directory.Build.props walking up
+    /// from the project's folder (stopping at the solution folder), else the project's AssemblyName. A file that
+    /// doesn't exist on disk (AdhocWorkspace tests build projects with no real file) is silently skipped rather than
+    /// thrown on, falling through to AssemblyName.
+    /// </summary>
+    private static string GetPackageId(Project project, string? solutionDir)
+    {
+        if (project.FilePath is not { } projectPath) return project.AssemblyName;
+        if (TryReadPackageIdLiteral(projectPath) is { } fromProject) return fromProject;
+
+        var boundary = solutionDir is null ? null : NormalizeDir(solutionDir);
+        var dir = Path.GetDirectoryName(projectPath);
+        while (dir is not null)
+        {
+            if (TryReadPackageIdLiteral(Path.Combine(dir, "Directory.Build.props")) is { } fromProps) return fromProps;
+            if (boundary is not null && NormalizeDir(dir) == boundary) break;
+
+            var parent = Path.GetDirectoryName(dir);
+            if (parent is null || parent == dir) break;
+            dir = parent;
+        }
+        return project.AssemblyName;
+
+        static string NormalizeDir(string d) => Path.GetFullPath(d).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
+
+    /// <summary>
+    /// The literal text of a &lt;PackageId&gt; element in a project or Directory.Build.props file, or null when the
+    /// file is missing, unreadable, malformed, has no such element, or the element's value contains "$(" -
+    /// ponytail: an MSBuild property reference (e.g. "$(AssemblyName).Extra") this walk doesn't evaluate, since doing
+    /// so would need the MSBuild engine rather than a plain XML read. Namespace-agnostic: SDK-style project files
+    /// declare no xmlns, but this also tolerates one if present.
+    /// </summary>
+    private static string? TryReadPackageIdLiteral(string filePath)
+    {
+        if (!File.Exists(filePath)) return null;
+        try
+        {
+            var value = XDocument.Load(filePath).Descendants().FirstOrDefault(e => e.Name.LocalName == "PackageId")?.Value.Trim();
+            return string.IsNullOrEmpty(value) || value.Contains("$(", StringComparison.Ordinal) ? null : value;
+        }
+        catch (Exception ex) when (ex is System.Xml.XmlException or IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Package ids referenced anywhere in a project.assets.json's "targets" section - every TFM key, since one
+    /// assets file already covers every TFM of a multi-targeted project: "targets" -&gt; &lt;tfm&gt; -&gt;
+    /// "&lt;id&gt;/&lt;version&gt;" entries whose "type" is "package" (as opposed to "project", a ProjectReference
+    /// restored into the same graph, which is already covered separately). Empty - never throwing - when the file is
+    /// missing or the JSON is malformed: a corrupted or absent lock file just means this edge source contributes
+    /// nothing, not a hard failure for the whole affected-test walk.
+    /// </summary>
+    private static HashSet<string> ReadAssetsPackageIds(string assetsJsonPath)
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!File.Exists(assetsJsonPath)) return ids;
+        try
+        {
+            using var stream = File.OpenRead(assetsJsonPath);
+            using var document = JsonDocument.Parse(stream);
+            if (!document.RootElement.TryGetProperty("targets", out var targets)) return ids;
+            foreach (var tfm in targets.EnumerateObject())
+            {
+                foreach (var entry in tfm.Value.EnumerateObject())
+                {
+                    if (entry.Value.ValueKind != JsonValueKind.Object) continue;
+                    if (!entry.Value.TryGetProperty("type", out var type) || !type.ValueEquals("package")) continue;
+                    var slash = entry.Name.IndexOf('/');
+                    ids.Add(slash > 0 ? entry.Name[..slash] : entry.Name);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is JsonException or IOException)
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+        return ids;
     }
 
     /// <summary>
