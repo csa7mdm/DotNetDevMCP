@@ -2,6 +2,7 @@
 
 using System.Collections.Immutable;
 using DotNetDevMCP.CodeIntelligence.Interfaces;
+using DotNetDevMCP.Core;
 using DotNetDevMCP.Core.Models;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -215,12 +216,7 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
     /// </remarks>
     public static IReadOnlyList<string> FindAffectedTestProjects(Solution solution, IEnumerable<string> changedFiles)
     {
-        var changedProjectIds = new HashSet<ProjectId>();
-        foreach (var file in changedFiles)
-        {
-            var full = Path.GetFullPath(file);
-            foreach (var id in solution.GetDocumentIdsWithFilePath(full)) changedProjectIds.Add(id.ProjectId);
-        }
+        var changedProjectIds = changedFiles.SelectMany(f => OwningProjects(solution, f)).ToHashSet();
         if (changedProjectIds.Count == 0) return [];
 
         // Reverse ProjectReference edges (referenced -> referencing projects), across all TFM variants.
@@ -244,6 +240,26 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
 
         return reachable.Select(solution.GetProject).OfType<Project>().Where(IsRunnableTestProject)
             .Select(p => p.FilePath).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>
+    /// The projects a changed file belongs to: those that compile it, or else those whose folder holds it (the deepest such
+    /// folder, for nested projects). That covers files the reference walk can't see: .csproj, .razor, .json, resources, and
+    /// deleted files. Empty when the file is outside every project folder (Directory.Build.props, global.json).
+    /// </summary>
+    public static IReadOnlyList<ProjectId> OwningProjects(Solution solution, string file)
+    {
+        var full = Path.GetFullPath(file);
+        var ids = solution.GetDocumentIdsWithFilePath(full);
+        if (!ids.IsEmpty) return ids.Select(id => id.ProjectId).Distinct().ToList();
+
+        var owners = solution.Projects
+            .Select(p => (p.Id, Dir: Path.GetDirectoryName(p.FilePath)))
+            .Where(p => p.Dir != null && PathBoundary.IsWithin(full, p.Dir))
+            .ToList();
+        if (owners.Count == 0) return [];
+        var deepest = owners.Max(p => p.Dir!.Length);
+        return owners.Where(p => p.Dir!.Length == deepest).Select(p => p.Id).ToList();
     }
 
     /// <summary>

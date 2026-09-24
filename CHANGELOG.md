@@ -3,6 +3,25 @@
 All notable changes to DotNetDevMCP are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [0.3.3] - 2026-09-24
+
+Prompted by an external evaluation; each claim was checked against the code first.
+
+### Fixed
+- `dotnet_test_affected`: a change to a file the reference walk can't trace (a `.csproj`, `.razor`, `appsettings.json`,
+  resources, or a deleted `.cs` file) returned "No changed .cs files" and ran nothing. It now runs the test projects that
+  reference the project holding the file, and lists the file in `untracedFiles`. A changed `.props`, `.targets`,
+  `global.json`, `nuget.config` or `.editorconfig` runs the whole solution. Documentation files and files outside every
+  project (CI workflows) are still ignored.
+
+### Documentation
+- Removed `docs/architecture/system-overview.md`, which described components that were never built (`MergeAnalyzer`,
+  `CodeReviewEngine`, `AgentCoordinator`, `DependencyAnalyzer`...). The wiki's Architecture page describes the code as it is.
+- The BenchmarkDotNet suite now says what it measures: orchestration overhead with simulated work, not Roslyn or test runs.
+- README: known gaps list the NuGet package reference gap and the lack of a sandbox; a test confirms calls through an
+  interface or base class are followed. New "Using it at work?" line.
+- CONTRIBUTING no longer points at a `docs/ai-context` file that doesn't exist.
+
 ## [0.3.2] - 2026-09-24
 
 Security release, prompted by two external reviews; each claim was checked against the code first. Upgrade from 0.3.0/0.3.1.

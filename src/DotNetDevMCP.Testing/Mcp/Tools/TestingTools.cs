@@ -84,10 +84,16 @@ public static class TestingTools
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var files = changedFiles is { Length: > 0 } ? changedFiles : await GitChangedFilesAsync(solutionDir, gitBase, cancellationToken);
         logger.LogDebug("dotnet_test_affected: resolved {Count} changed files in {Ms} ms", files.Length, sw.ElapsedMilliseconds);
-        files = files.Where(f => f.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)).Select(f => Path.GetFullPath(Path.Combine(solutionDir, f))).ToArray();
-        if (files.Length == 0)
+        var solution = solutions.CurrentSolution;
+        var changed = files.Select(f => Path.GetFullPath(Path.Combine(solutionDir, f))).Where(f => !DocumentationExtensions.Contains(Path.GetExtension(f))).ToArray();
+        // The walk traces only C# the solution compiles. Anything else (a .csproj, .razor, appsettings.json, a deleted file)
+        // can still break tests, so it switches to the project fallback below instead of being dropped.
+        files = changed.Where(f => f.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) && !solution.GetDocumentIdsWithFilePath(f).IsEmpty).ToArray();
+        var untraced = changed.Where(f => !files.Contains(f) && (AffectedTestFinder.OwningProjects(solution, f).Count > 0 || IsBuildWideFile(f))).ToArray();
+        var buildWideChange = untraced.Any(IsBuildWideFile);
+        if (files.Length == 0 && untraced.Length == 0)
         {
-            return new { Success = true, ChangedFiles = Array.Empty<string>(), AffectedTests = Array.Empty<object>(), Message = "No changed .cs files." };
+            return new { Success = true, ChangedFiles = Array.Empty<string>(), AffectedTests = Array.Empty<object>(), Message = "No changed code or project files." };
         }
 
         sw.Restart();
@@ -108,24 +114,28 @@ public static class TestingTools
         AffectedRunScope scope;
         IReadOnlyList<string> projectsToRun = [];
         IReadOnlyList<string> allTestProjects = [];
-        if (selection.Complete && selectedFraction <= maxSelectedFraction)
+        if (untraced.Length == 0 && selection.Complete && selectedFraction <= maxSelectedFraction)
         {
             scope = AffectedRunScope.Selection;
             note = null;
         }
         else
         {
-            var reason = !selection.Complete
+            var reason = untraced.Length > 0
+                ? $"Changed files the reference walk can't trace ({string.Join(", ", untraced.Select(Path.GetFileName))}): tests that depend on them can't be picked by name."
+                : !selection.Complete
                 ? $"Selection stopped after {maxSelectionSeconds}s and {selection.SymbolsSearched} symbols: this change reaches too much code to trace cheaply."
                 : $"Selected {affected.Count} of {selection.TotalTestMethods} test methods ({selectedFraction:P0}), above the {maxSelectedFraction:P0} threshold: a selection this large is likely slower filtered than running the whole solution.";
 
-            var reachableProjects = AffectedTestFinder.FindAffectedTestProjects(solutions.CurrentSolution, files);
-            allTestProjects = AffectedTestFinder.AllTestProjectFilePaths(solutions.CurrentSolution);
+            var reachableProjects = AffectedTestFinder.FindAffectedTestProjects(solution, files.Concat(untraced));
+            allTestProjects = AffectedTestFinder.AllTestProjectFilePaths(solution);
 
-            if (reachableProjects.Count == 0 || reachableProjects.Count >= allTestProjects.Count)
+            if (buildWideChange || reachableProjects.Count == 0 || reachableProjects.Count >= allTestProjects.Count)
             {
                 scope = AffectedRunScope.Solution;
-                note = $"{reason} Every test project in the solution is reachable from the change (or none could be resolved to a project); running the whole solution instead.";
+                note = buildWideChange
+                    ? $"{reason} A build-wide file changed, which can affect every project; running the whole solution instead."
+                    : $"{reason} Every test project in the solution is reachable from the change (or none could be resolved to a project); running the whole solution instead.";
             }
             else
             {
@@ -140,7 +150,7 @@ public static class TestingTools
         }
         var ranWholeSolution = scope == AffectedRunScope.Solution; // kept for compatibility; true only when the whole solution ran.
 
-        if (dryRun || (selection.Complete && affected.Count == 0))
+        if (dryRun || (scope == AffectedRunScope.Selection && affected.Count == 0))
         {
             var plannedProjects = scope switch
             {
@@ -148,7 +158,7 @@ public static class TestingTools
                 AffectedRunScope.Solution => allTestProjects,
                 _ => (IReadOnlyList<string>)[],
             };
-            return new { Success = true, ChangedFiles = files, SelectionComplete = selection.Complete, selection.SymbolsSearched, selection.TotalTestMethods, Note = note, RanWholeSolution = ranWholeSolution, RanScope = ScopeName(scope), TestProjectsRun = plannedProjects.Select(Path.GetFileName), AffectedTests = list, Ran = false };
+            return new { Success = true, ChangedFiles = files, UntracedFiles = untraced, SelectionComplete = selection.Complete, selection.SymbolsSearched, selection.TotalTestMethods, Note = note, RanWholeSolution = ranWholeSolution, RanScope = ScopeName(scope), TestProjectsRun = plannedProjects.Select(Path.GetFileName), AffectedTests = list, Ran = false };
         }
 
         TestRunSummary summary;
@@ -190,7 +200,19 @@ public static class TestingTools
                 break;
         }
 
-        return new { Success = summary.Success, ChangedFiles = files, SelectionComplete = selection.Complete, selection.SymbolsSearched, selection.TotalTestMethods, Note = note, RanWholeSolution = ranWholeSolution, RanScope = ScopeName(scope), TestProjectsRun = testProjectsRun.Select(Path.GetFileName), AffectedTests = list, Ran = true, Run = Shape(summary) };
+        return new { Success = summary.Success, ChangedFiles = files, UntracedFiles = untraced, SelectionComplete = selection.Complete, selection.SymbolsSearched, selection.TotalTestMethods, Note = note, RanWholeSolution = ranWholeSolution, RanScope = ScopeName(scope), TestProjectsRun = testProjectsRun.Select(Path.GetFileName), AffectedTests = list, Ran = true, Run = Shape(summary) };
+    }
+
+    /// <summary>Changes to these can't break a test. ponytail: extension list, not content sniffing.</summary>
+    private static readonly HashSet<string> DocumentationExtensions = new(StringComparer.OrdinalIgnoreCase) { ".md", ".txt", ".png", ".jpg", ".jpeg", ".gif", ".svg" };
+
+    /// <summary>Files outside any project folder that still feed every build.</summary>
+    private static bool IsBuildWideFile(string path)
+    {
+        var name = Path.GetFileName(path);
+        return name.EndsWith(".props", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".targets", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("global.json", StringComparison.OrdinalIgnoreCase) || name.Equals("nuget.config", StringComparison.OrdinalIgnoreCase)
+            || name.Equals(".editorconfig", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string ScopeName(AffectedRunScope scope) => scope.ToString().ToLowerInvariant();

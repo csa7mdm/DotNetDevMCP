@@ -1,10 +1,13 @@
 # DotNetDevMCP Performance Benchmarks
 
-This project contains comprehensive performance benchmarks for the DotNetDevMCP orchestration components using BenchmarkDotNet.
+BenchmarkDotNet micro-benchmarks for the orchestration layer (`ConcurrentExecutor`, `WorkflowEngine`, `ResourceManager`).
 
-## Purpose
+## What these measure, and what they don't
 
-Measure and validate the performance improvements achieved through concurrent operations and orchestration. Target: **measured 3.8x on this repository's test suite; see README for the benchmark tables** over sequential execution.
+Every operation here is a simulated `Task.Delay`. The numbers show the scheduling and throttling overhead of the orchestration
+classes compared with a sequential loop and `Task.WhenAll`; they say nothing about Roslyn, `dotnet build` or `dotnet test`.
+For real workloads (affected-test selection on the Polly repository, build and test wall time, response sizes), see
+[benchmarks/polly](../polly/README.md).
 
 ## Benchmark Categories
 
