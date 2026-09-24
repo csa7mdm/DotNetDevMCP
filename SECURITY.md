@@ -6,7 +6,8 @@ Currently, only the latest version of DotNetDevMCP is supported with security up
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.3.x   | :white_check_mark: |
+| 0.3.2+  | :white_check_mark: |
+| 0.3.0-0.3.1 | :x: (argument injection, weak path check: upgrade) |
 | < 0.3   | :x:                |
 
 ## Reporting a Vulnerability
