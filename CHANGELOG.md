@@ -7,10 +7,16 @@ All notable changes to DotNetDevMCP are documented here. The format follows
 
 ### Security
 - **`--http` DNS rebinding / cross-origin protection.** Per the MCP Streamable HTTP transport's security guidance, the server
-  now validates the `Origin` header on every request: a browser request whose Origin isn't a localhost origin (or a
-  configured `--allowed-origin`) gets a 403, as does any request whose `Host` header doesn't name this machine's loopback
-  interface (`localhost`, `127.0.0.1`, `[::1]`). Non-browser MCP clients, which don't send an `Origin` header, are
-  unaffected. New `--allowed-origin <origin>` option (repeatable) allows a trusted local dev server. `--http` still has no
+  now validates the `Origin` header on every request that carries one: only `http://localhost:<port>`,
+  `http://127.0.0.1:<port>` and `http://[::1]:<port>` (the server's own port) are accepted, plus any exact value passed via
+  the new repeatable `--allowed-origin <origin>` option (validated at startup: must be a bare `http`/`https` origin, no
+  path/query/fragment/userinfo/wildcard). Everything else, including other localhost ports and `https://` origins not
+  explicitly allow-listed, gets a 403. A request whose `Host` header doesn't name this machine's loopback interface
+  (`localhost`, `127.0.0.1`, `[::1]`) also gets a 403 (DNS rebinding defense). Requests without an `Origin` header - every
+  non-browser MCP client, and a browser's simple GET/HEAD - are not rejected by this check; they still only get whatever
+  the MCP endpoint itself returns for that request (typically 404/405 outside a POST). The server sends no CORS headers,
+  so `--allowed-origin` does not let a browser page call it directly from that origin - it's for a local dev-server proxy
+  that forwards the original `Origin`, or a non-browser client that happens to set one. `--http` still has no
   authentication or TLS and still shouldn't be exposed beyond localhost.
 
 ## [0.3.3] - 2026-09-24

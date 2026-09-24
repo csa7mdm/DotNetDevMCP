@@ -1,119 +1,38 @@
-using System.Diagnostics;
 using System.Net;
-using System.Net.Sockets;
 
 namespace DotNetDevMCP.Integration.Tests;
 
-/// <summary>Starts the real dotnetdevmcp --http host (via the project reference to
-/// DotNetDevMCP.Server) as a child process on a free port, and hits it over real HTTP -
-/// no fakes, so this exercises the actual Kestrel pipeline including our origin/host guard.</summary>
-public class LocalOriginGuardIntegrationTests : IAsyncLifetime
+/// <summary>Real-server tests for the default (no extra <c>--allowed-origin</c>) configuration.</summary>
+public class LocalOriginGuardIntegrationTests : LocalOriginGuardIntegrationTestsBase
 {
-    private Process? _process;
-    private int _port;
-    private readonly HttpClient _http = new();
-
-    public async Task InitializeAsync()
-    {
-        _port = GetFreeTcpPort();
-
-        var dllPath = Path.Combine(AppContext.BaseDirectory, "dotnetdevmcp.dll");
-        Assert.True(File.Exists(dllPath), $"Expected the referenced server build at {dllPath}");
-
-        _process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "dotnet",
-                Arguments = $"\"{dllPath}\" --http --port {_port}",
-                WorkingDirectory = AppContext.BaseDirectory,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            },
-        };
-        _process.OutputDataReceived += (_, _) => { };
-        _process.ErrorDataReceived += (_, _) => { };
-        _process.Start();
-        _process.BeginOutputReadLine();
-        _process.BeginErrorReadLine();
-
-        await WaitForPortAsync(_port, TimeSpan.FromSeconds(30));
-    }
-
-    public async Task DisposeAsync()
-    {
-        _http.Dispose();
-        if (_process is { HasExited: false })
-        {
-            try
-            {
-                _process.Kill(entireProcessTree: true);
-                await _process.WaitForExitAsync();
-            }
-            catch
-            {
-                // Best-effort cleanup.
-            }
-        }
-        _process?.Dispose();
-    }
-
     [Fact]
     public async Task Foreign_origin_post_is_rejected_with_403()
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"http://localhost:{_port}/")
-        {
-            Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json"),
-        };
-        request.Headers.Add("Origin", "http://evil.example");
+        using var request = CreateInitializeRequest(Port, origin: "http://evil.example");
 
-        using var response = await _http.SendAsync(request);
+        using var response = await Http.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
-    public async Task No_origin_post_is_not_rejected_by_the_guard()
+    public async Task Rebinding_host_header_is_rejected_with_403()
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"http://localhost:{_port}/")
-        {
-            Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json"),
-        };
-        // No Origin header at all - simulates a non-browser MCP client.
+        using var request = CreateInitializeRequest(Port, hostOverride: "evil.example");
 
-        using var response = await _http.SendAsync(request);
+        using var response = await Http.SendAsync(request);
 
-        Assert.NotEqual(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    private static int GetFreeTcpPort()
+    [Fact]
+    public async Task No_origin_initialize_reaches_mcp_and_succeeds()
     {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
-    }
+        // No Origin header at all - simulates a non-browser MCP client performing a real handshake.
+        using var request = CreateInitializeRequest(Port);
 
-    private static async Task WaitForPortAsync(int port, TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        Exception? last = null;
-        while (DateTime.UtcNow < deadline)
-        {
-            try
-            {
-                using var client = new TcpClient();
-                await client.ConnectAsync(IPAddress.Loopback, port);
-                return;
-            }
-            catch (Exception ex)
-            {
-                last = ex;
-                await Task.Delay(250);
-            }
-        }
-        throw new TimeoutException($"Server did not start listening on port {port} within {timeout}.", last);
+        using var response = await Http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 }

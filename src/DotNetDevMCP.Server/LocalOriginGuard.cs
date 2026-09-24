@@ -6,10 +6,11 @@
 namespace DotNetDevMCP.Server;
 
 /// <summary>
-/// Rejects cross-origin browser requests and requests whose Host header doesn't name this machine's
-/// loopback interface, so a malicious page (via DNS rebinding or a plain fetch()) can't reach the
-/// MCP server through a victim's browser. Non-browser MCP clients don't send an Origin header at all,
-/// so their requests are unaffected.
+/// Rejects any request carrying a foreign <c>Origin</c> header, and any request whose <c>Host</c> header
+/// doesn't name this machine's loopback interface, so a malicious page (via DNS rebinding or a plain
+/// <c>fetch()</c>) can't reach the MCP server through a victim's browser. Requests without an Origin
+/// header - every non-browser MCP client, and a browser's simple GET/HEAD - aren't rejected by this
+/// check; they just get whatever the MCP endpoint itself returns for that request.
 /// </summary>
 public static class LocalOriginGuard
 {
@@ -54,8 +55,10 @@ public static class LocalOriginGuard
             }
         }
 
-        // Missing Host header: Kestrel/HTTP itself normally rejects this with 400 before we run.
-        // Don't try to second-guess that here - just don't throw.
+        // A missing or empty Host header does reach this code - Kestrel does not reject it for us
+        // (an HTTP/1.0 request with no Host header, or one with an empty Host value, is passed through).
+        // We allow it deliberately: every real browser always sends Host, so a request without one is
+        // necessarily a non-browser client, which isn't the DNS-rebinding threat this check defends against.
         if (string.IsNullOrEmpty(host))
         {
             return null;

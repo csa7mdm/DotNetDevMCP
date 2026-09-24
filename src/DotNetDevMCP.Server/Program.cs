@@ -78,6 +78,23 @@ public static class Program
         bool cleanEnv = parsed.GetValue(cleanEnvOption);
         string[] allowedOrigins = parsed.GetValue(allowedOriginOption) ?? [];
 
+        // Ignored in stdio mode (--allowed-origin only affects --http), so only validate when it matters:
+        // a typo'd or nonsensical value should fail fast at startup rather than silently never matching.
+        if (http && allowedOrigins.Length > 0)
+        {
+            var normalized = new string[allowedOrigins.Length];
+            for (var i = 0; i < allowedOrigins.Length; i++)
+            {
+                var error = AllowedOriginValidation.Validate(allowedOrigins[i], out normalized[i]);
+                if (error is not null)
+                {
+                    Console.Error.WriteLine($"--allowed-origin '{allowedOrigins[i]}' is invalid: {error}");
+                    return 2;
+                }
+            }
+            allowedOrigins = normalized;
+        }
+
         Log.Logger = BuildLogger(logLevel, logDir);
 
         if (disableGitLegacyFlag)

@@ -61,10 +61,12 @@ public class LocalOriginGuardTests
     }
 
     [Fact]
-    public void Missing_host_header_does_not_throw_and_is_not_rejected_here()
+    public void Missing_or_empty_host_header_is_allowed_as_a_non_browser_client()
     {
-        // Kestrel/HTTP itself is expected to reject a request with no Host header (400) before
-        // this logic runs; we just make sure we don't crash if it somehow reaches us.
+        // Kestrel does not reject a missing/empty Host header for us, so this does reach the guard.
+        // We allow it: every real browser sends Host, so its absence means a non-browser client,
+        // which isn't the DNS-rebinding threat this check defends against.
         Assert.Null(LocalOriginGuard.Reject(null, null, Port, NoExtraOrigins));
+        Assert.Null(LocalOriginGuard.Reject(null, "", Port, NoExtraOrigins));
     }
 }

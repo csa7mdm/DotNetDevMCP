@@ -73,7 +73,7 @@ can't add options such as `-p:CustomBeforeMicrosoftCommonTargets=...` or `--outp
 | Default (git and monitoring tools off) | Fewer tools for the agent to misuse | - |
 | `--clean-env` | Child processes get a minimal environment: tokens, API keys and cloud credentials in environment variables are not passed on | Not a sandbox: files such as `~/.aws/credentials` and the network are still reachable |
 | Edits stay in the solution directory | Roslyn edit tools refuse paths outside it | Doesn't restrict what a build does |
-| `--http`'s built-in Origin/Host checks | Blocks DNS rebinding and cross-origin browser requests to the port; `--allowed-origin` extends the allow-list for a trusted local dev server | Not authentication: any loopback process, browser tab on an allowed origin, or non-browser client can still reach it |
+| `--http`'s built-in Origin/Host checks | Rejects requests carrying a foreign `Origin` header and requests whose `Host` doesn't name this machine's loopback interface (DNS rebinding) | Not authentication, and sends no CORS headers: `--allowed-origin` doesn't let a browser page call it directly, only a proxy or non-browser client that sets that Origin; any request without an `Origin` header still reaches the port |
 
 ### Untrusted code
 
@@ -83,13 +83,18 @@ isolation itself.
 
 ### `--http` mode
 
-HTTP mode listens on `localhost` only. It rejects cross-origin browser requests and non-localhost Host headers (DNS
-rebinding defense): a request with an `Origin` header that isn't localhost, `127.0.0.1`, `[::1]`, or a configured
-`--allowed-origin` gets a 403, as does a request whose `Host` header doesn't name this machine's loopback interface.
-Non-browser MCP clients, which don't send an `Origin` header, are unaffected. It still has **no authentication or TLS**:
-anyone on the loopback interface who can reach the port can build, test and edit with your privileges. Don't forward the
-port, put it behind a proxy, or run it on a shared machine. A multi-user or hosted deployment would need authentication,
-a sandbox per session and audit logging; DotNetDevMCP doesn't provide those today.
+HTTP mode listens on `localhost` only. A request that carries an `Origin` header is checked against an allow-list: only
+`http://localhost:<port>`, `http://127.0.0.1:<port>` and `http://[::1]:<port>` (the server's own port), plus any exact
+value passed via `--allowed-origin` (validated at startup - no wildcards, no path/query/fragment/userinfo), are accepted.
+Everything else - including other localhost ports and `https://` origins not explicitly allow-listed - gets a 403. A
+request whose `Host` header doesn't name this machine's loopback interface also gets a 403 (DNS rebinding defense).
+Requests without an `Origin` header (every non-browser MCP client, and a browser's simple GET/HEAD) are not rejected by
+this check; they still only get whatever the MCP endpoint itself returns for that request. The server sends no CORS
+headers, so `--allowed-origin` does not let a browser page call it directly from that origin - it's for a local
+dev-server proxy that forwards the original `Origin`, or a non-browser client that happens to set one. It still has
+**no authentication or TLS**: anyone on the loopback interface who can reach the port can build, test and edit with your
+privileges. Don't forward the port, put it behind a proxy, or run it on a shared machine. A multi-user or hosted
+deployment would need authentication, a sandbox per session and audit logging; DotNetDevMCP doesn't provide those today.
 
 ## Security Updates
 
