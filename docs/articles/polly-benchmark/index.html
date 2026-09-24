@@ -1,0 +1,305 @@
+---
+layout: null
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DotNetDevMCP on Polly: 5.1s vs 48.1s Test Runs</title>
+<meta name="description" content="DotNetDevMCP, an open-source MCP server for .NET agents: affected tests ran in 5.1 s vs 48.1 s for the full Polly suite.">
+<link rel="canonical" href="https://csa7mdm.github.io/DotNetDevMCP/articles/polly-benchmark/">
+<meta property="og:title" content="I benchmarked my .NET MCP server on Polly. It broke six ways.">
+<meta property="og:description" content="DotNetDevMCP, an open-source MCP server for .NET agents: affected tests ran in 5.1 s vs 48.1 s for the full Polly suite.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://csa7mdm.github.io/DotNetDevMCP/articles/polly-benchmark/">
+<meta property="og:image" content="https://csa7mdm.github.io/DotNetDevMCP/images/og-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="DotNetDevMCP sits between an AI coding agent and the Roslyn workspace and dotnet CLI">
+  <meta name="twitter:card" content="summary_large_image">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1f2328;
+    --muted: #57606a;
+    --border: #d0d7de;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+    --accent-bg: #f3f0fd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d1117;
+      --fg: #e6edf3;
+      --muted: #9198a1;
+      --border: #30363d;
+      --code-bg: #161b22;
+      --link: #4493f8;
+      --accent-bg: #1a1530;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1117;
+    --fg: #e6edf3;
+    --muted: #9198a1;
+    --border: #30363d;
+    --code-bg: #161b22;
+    --link: #4493f8;
+    --accent-bg: #1a1530;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem 1rem 4rem;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+  main, header, aside {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 1.9rem; line-height: 1.25; margin-bottom: 0.5rem; }
+  h2 { font-size: 1.4rem; margin-top: 2.5rem; }
+  p.dek { font-size: 1.15rem; color: var(--muted); margin-top: 0; }
+  header p.byline { color: var(--muted); font-size: 0.95rem; }
+  a { color: var(--link); }
+  code {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.1em 0.35em;
+    font-size: 0.9em;
+    font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    overflow-x: auto;
+  }
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 0.9em;
+  }
+  figure {
+    margin: 1.5rem 0;
+  }
+  figure img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  figcaption {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1rem 0;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 0.4rem 0.6rem;
+    text-align: left;
+  }
+  aside#key-facts {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    margin: 1.5rem auto 2rem;
+    background: var(--accent-bg);
+  }
+  aside#key-facts h2 {
+    margin-top: 0;
+    font-size: 1.1rem;
+  }
+  aside#key-facts dl {
+    margin: 0;
+  }
+  aside#key-facts dt {
+    font-weight: 600;
+    margin-top: 0.75rem;
+  }
+  aside#key-facts dd {
+    margin-left: 0;
+    color: var(--fg);
+  }
+  ul, ol {
+    padding-left: 1.4rem;
+  }
+  li {
+    margin: 0.4rem 0;
+  }
+</style>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+ {"@type":"SoftwareApplication","@id":"https://csa7mdm.github.io/DotNetDevMCP/#software","name":"DotNetDevMCP","description":"DotNetDevMCP is an open-source MCP server that gives AI coding agents Roslyn's compiler view of a .NET solution.","applicationCategory":"DeveloperApplication","operatingSystem":"Windows, Linux, macOS","softwareRequirements":".NET 10 SDK","softwareVersion":"0.3.3","license":"https://opensource.org/licenses/MIT","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"downloadUrl":"https://www.nuget.org/packages/DotNetDevMCP","codeRepository":"https://github.com/csa7mdm/DotNetDevMCP","programmingLanguage":"C#","author":{"@id":"https://csa7mdm.github.io/DotNetDevMCP/#author"},"sameAs":["https://github.com/csa7mdm/DotNetDevMCP","https://www.nuget.org/packages/DotNetDevMCP"]},
+ {"@type":"Person","@id":"https://csa7mdm.github.io/DotNetDevMCP/#author","name":"Ahmed Mustafa","sameAs":["https://github.com/csa7mdm","<LinkedIn profile URL>","<Medium profile URL>"]},
+ {"@type":"TechArticle","@id":"https://csa7mdm.github.io/DotNetDevMCP/articles/polly-benchmark/#article","headline":"I benchmarked my .NET MCP server on Polly. It broke six ways.","datePublished":"2026-09-24","author":{"@id":"https://csa7mdm.github.io/DotNetDevMCP/#author"},"about":{"@id":"https://csa7mdm.github.io/DotNetDevMCP/#software"},"isBasedOn":{"@id":"https://csa7mdm.github.io/DotNetDevMCP/benchmarks/polly/#dataset"}},
+ {"@type":"Dataset","@id":"https://csa7mdm.github.io/DotNetDevMCP/benchmarks/polly/#dataset","name":"DotNetDevMCP affected-test benchmark on Polly","description":"Selection size, wall time and fault-injection recall of dotnet_test_affected on App-vNext/Polly at commit 9a81fdc7.","temporalCoverage":"2026-09-23","license":"https://opensource.org/licenses/MIT","distribution":[{"@type":"DataDownload","encodingFormat":"application/json","contentUrl":"https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/benchmarks/polly/results/b-timing.json"}]}]}
+</script>
+</head>
+<body>
+<header>
+  <h1>I benchmarked my .NET MCP server on Polly. It broke six ways.</h1>
+  <p class="dek">DotNetDevMCP is an open-source MCP server that gives AI coding agents Roslyn's compiler view of a .NET solution.</p>
+  <p class="byline">By <a href="https://github.com/csa7mdm" rel="author">Ahmed Mustafa</a> &middot; <time datetime="2026-09-24">24 September 2026</time></p>
+</header>
+
+<aside id="key-facts" aria-label="Key facts">
+  <h2>Key facts</h2>
+  <dl>
+    <dt>What</dt>
+    <dd>DotNetDevMCP is an open-source MCP server that gives AI coding agents Roslyn's compiler view of a .NET solution.</dd>
+    <dt>Install</dt>
+    <dd><code>claude mcp add dotnetdevmcp -- dotnet dnx DotNetDevMCP --yes</code> with the .NET 10 SDK.</dd>
+    <dt>Speed</dt>
+    <dd>A one-file change on Polly selected 5 test methods and ran in 5.1 s on net10.0, against 48.1 s for the full net10.0 suite in the same session (Polly commit 9a81fdc7, measured 2026-09-23).</dd>
+    <dt>Safety</dt>
+    <dd>Selections included 111 of the 112 tests that injected faults broke, and every injected bug was caught by at least one selected test (Polly commit 9a81fdc7, measured 2026-09-23).</dd>
+    <dt>Context size</dt>
+    <dd>FindReferences answered "where is <code>ResilienceContext.CancellationToken</code> used?" with 137 references in 6.5 KB, against 202 KB for <code>git grep -w</code> (Polly commit 9a81fdc7, measured 2026-09-23).</dd>
+    <dt>Limits</dt>
+    <dd>Reflection, string-keyed lookups, DI by convention, and NuGet-only (non-project-reference) dependencies are invisible to the selection walk.</dd>
+  </dl>
+</aside>
+
+<main>
+  <p>Ask an AI coding agent where <code>ResilienceContext.CancellationToken</code> is used in <a href="https://github.com/App-vNext/Polly">Polly</a>, and it will usually run grep. Grep returns 1,354 lines, about 202 KB of text, because <code>CancellationToken</code> is also a type, a parameter name and a word in comments. The agent reads all of it, or a truncated slice of it, and guesses.</p>
+
+  <p>The compiler knows the answer: 137 references. As a tool response, that's 6.5 KB.</p>
+
+  <p><a href="https://github.com/csa7mdm/DotNetDevMCP">DotNetDevMCP</a> started as a place to try out new ideas: MCP, Roslyn, agents calling compilers. The more I built, the more it looked like something other .NET developers could use, so I turned it into an open-source package. It's an MCP server that gives agents Roslyn's view of a .NET solution: real references, implementations, renames with a compile check, builds with compact output, and a tool that runs only the tests a change can break. This post is mostly about that last tool, because it's the one I got wrong first.</p>
+
+  <figure>
+    <img src="{{ site.baseurl }}/images/how-it-works.svg" width="880" height="380" alt="Diagram: an AI coding agent (Claude Code, VS Code or Copilot, Cursor, Claude Desktop, or any MCP client) connects over MCP via stdio or HTTP to the DotNetDevMCP server, which exposes 37 tools by default across Code intelligence (21), Testing (3), Build (4), Analysis (5), and Orchestration (4), plus opt-in Git (10) and Monitoring (6); the server in turn drives a Roslyn workspace over your .sln or .slnx for symbols and references, and the dotnet CLI for build and test.">
+    <figcaption>How DotNetDevMCP works</figcaption>
+  </figure>
+
+  <section id="one-line-to-install">
+    <h2>How do I install DotNetDevMCP?</h2>
+    <p>With the .NET 10 SDK:</p>
+    <pre><code class="language-bash">claude mcp add dotnetdevmcp -- dotnet dnx DotNetDevMCP --yes</code></pre>
+    <p>For VS Code, nuget.org's <a href="https://www.nuget.org/packages/DotNetDevMCP">package page</a> has an "MCP Server" tab that generates the <code>mcp.json</code> entry. It's also in the <a href="https://registry.modelcontextprotocol.io">MCP Registry</a> as <code>io.github.csa7mdm/dotnetdevmcp</code>.</p>
+    <p>Then ask your agent: <em>"Load MySolution.sln and tell me where <code>OrderService.Submit</code> is used."</em></p>
+  </section>
+
+  <section id="the-tool-i-cared-about-tests-for-this-change">
+    <h2>How does dotnet_test_affected pick which tests to run?</h2>
+    <p>After an edit, agents rerun the whole test suite. On a big solution that's minutes per iteration, several times per task.</p>
+
+    <figure>
+      <img src="{{ site.baseurl }}/images/affected-tests.svg" width="880" height="330" alt="Flowchart: dotnet_test_affected takes changed files from the git working tree or a gitBase commit, extracts symbols (methods, properties, constructors, fields), walks references up to 8 hops via Roslyn within a 10-second budget, and reaches test methods marked Fact, Theory, Test, or TestMethod. If the walk finished in budget and selected 20% or less of the tests, it runs only those tests, each with a via chain explaining why it was picked; otherwise it runs the whole solution and says why, never returning a partial set. A note states that on Polly, 111 of 112 tests broken by injected faults were selected, with reflection as the main miss.">
+      <figcaption>How dotnet_test_affected chooses tests</figcaption>
+    </figure>
+
+    <p><code>dotnet_test_affected</code> does something narrower. It takes the symbols declared in the changed files, asks Roslyn who references them, then who references <em>those</em>, until it reaches methods marked <code>[Fact]</code>, <code>[Theory]</code>, <code>[Test]</code> or <code>[TestMethod]</code>. Then it runs exactly those tests. Every selected test comes with a <code>via</code> chain that explains why it was picked:</p>
+
+    <pre><code>ResourceManager.cs -> Dispose -> ConcurrentExecutor</code></pre>
+
+    <p>On my own repository it looked fine. Depending on the file, it picked between 2 and 35 of the 46 tests, and the picks were right. It was also no faster: on a suite that small, building and starting the test host take most of the time, so a filtered run of 35 tests took 11.4 s against 10.4 s for everything. The selection worked. I just had no evidence it mattered, so on 23 September I pointed it at a real library.</p>
+  </section>
+
+  <section id="polly-801-files-12262-test-runs">
+    <h2>What happened when DotNetDevMCP was pointed at Polly?</h2>
+    <p>Polly is a good stress test. At the commit I used, it has 801 C# files and 7 test projects, each multi-targeted to net8.0, net9.0 and net10.0 (plus net481 on Windows). It runs xUnit v3 on Microsoft.Testing.Platform. The full suite is 12,262 test executions across all target frameworks, 3,065 on net10.0 alone.</p>
+
+    <p>I drove the server over stdio with a small scripted client, the way an agent calls it, and replayed Polly's last 40 commits. It broke six ways.</p>
+
+    <ol>
+      <li><strong>Every test run failed.</strong> Polly's <code>global.json</code> switches <code>dotnet test</code> to Microsoft.Testing.Platform, which takes different arguments from classic VSTest. I only supported VSTest.</li>
+      <li><strong>The repo's <code>global.json</code> was ignored anyway.</strong> The server ran <code>dotnet</code> from its own working directory, not the project's, so the pinned SDK and test runner never applied.</li>
+      <li><strong>Selection never finished.</strong> For one commit it ran for 70 minutes. In that time I cooked dinner, ate it, and came back to find it still searching, so I stopped it. Each target framework is a separate Roslyn project, so every symbol was searched once per framework, and the repeats compounded at every hop.</li>
+      <li><strong>Reference counts were inflated.</strong> <code>MaxRetryAttempts</code> has 79 matching lines in the repo. My tool reported 925 references: one per target framework, plus duplicates.</li>
+      <li><strong>It missed <code>[MemberData]</code> theories.</strong> When test data comes from a static field, the walk went from the field initializer to the static constructor, which nothing references, and stopped.</li>
+      <li><strong>The default depth was too shallow.</strong> At 3 hops, the walk missed tests that reach the code through a chain of overloads, like <code>ExecuteAsync(action, ct)</code> calling its way down to the implementation.</li>
+    </ol>
+
+    <p>None of these showed up on my own repo. It has one target framework, no <code>global.json</code> quirks and no theories fed by fields.</p>
+  </section>
+
+  <section id="after-the-fixes-measured">
+    <h2>How much faster is affected-test selection after the fixes?</h2>
+    <p>Each fix went in with a number attached (the full method and raw data are in <a href="https://github.com/csa7mdm/DotNetDevMCP/blob/main/benchmarks/polly/README.md">benchmarks/polly</a>). Everything below ran on one laptop, an i7-10750H with 32 GB, so read it as a description of how the tool behaves. Your codebase will have its own numbers.</p>
+
+    <p><strong>Small changes get much faster.</strong> A one-file change selected 5 test methods. On net10.0 they ran in 5.1 s, against 48.1 s for the full net10.0 suite in the same session. In a quieter session it was 4.6 s against 33.2 s.</p>
+
+    <figure>
+      <img src="{{ site.baseurl }}/images/benchmark-polly.svg" width="880" height="300" alt="Bar chart measured on Polly (801 C# files, 3,065 tests on net10.0). Panel one, test run after a one-file change: full test suite 48.1 seconds versus affected tests only 5.1 seconds for 5 tests. Panel two, where is CancellationToken used: grep -w 202 KB versus FindReferences 6.5 KB for 137 real references. Notes: selections included 111 of the 112 tests that injected faults broke; changes that reach many tests gain nothing and run the full suite on purpose.">
+      <figcaption>Benchmark on Polly</figcaption>
+    </figure>
+
+    <p><strong>Broad changes gain nothing, on purpose.</strong> Of the last 40 commits, 16 ran a filtered selection (median 82 test methods). The other 24 ran the full suite, either because the change reached core plumbing that everything depends on, or because the selection was big. That second rule came from a measurement: a 589-method selection ran <em>slower</em> filtered (40.5 s) than the whole suite (33.2 s). Filtered runs have per-project overhead, and past about 20% of the tests it stops paying off. So above that, the tool runs everything and says so.</p>
+
+    <p><strong>It picks the tests that break.</strong> I injected a throwing statement into 10 random methods from files those commits touched, ran the full suite to see which tests actually failed, and compared that with the selection. Where the selection completed, it included 111 of the 112 failing tests, and every injected bug was caught by at least one selected test. The one miss builds its object through reflection, which static analysis can't see.</p>
+
+    <p><strong>It never pretends.</strong> If the walk runs out of its time budget (10 s by default), the tool doesn't return the partial set it found. It falls back to running the test projects that depend on the changed code, or the whole solution, and the response says which and why.</p>
+
+    <p>There's a trade-off I kept in the defaults. Depth 3 narrows more commits (26 of 40 instead of 16) but missed about 10% of the tests a change breaks. A test selector has to be safe first, so the default is 8, and <code>maxDepth: 3</code> is there if you want the speed.</p>
+  </section>
+
+  <section id="one-thing-that-did-not-work">
+    <h2>Did warming up the Roslyn cache make selection faster?</h2>
+    <p>The first selection of a session is slower, because Roslyn binds each file the first time a walk touches it. I added a background warm-up that built every project's compilation right after the solution loaded.</p>
+
+    <p>It made no measurable difference. Ninety seconds after loading, the first selection on a busy file still hit the budget. The cost is per document a specific walk touches, and warming the rest doesn't help. I removed it.</p>
+  </section>
+
+  <section id="what-outside-reviews-found">
+    <h2>What did outside code reviews find?</h2>
+    <p>After the benchmark, three outside reviews of the code came back. Between them, they found two problems I had not looked for.</p>
+
+    <ul>
+      <li><strong>Argument injection.</strong> Tool arguments were concatenated into <code>dotnet</code> and <code>git</code> command lines. A crafted MSBuild property value could add <code>-p:CustomBeforeMicrosoftCommonTargets=evil.targets</code> and import a targets file. Arguments are now passed as a list and validated, and list separators in property values are escaped. That was release 0.3.2.</li>
+      <li><strong>Non-C# changes.</strong> A change to a <code>.csproj</code>, a <code>.razor</code> file or <code>appsettings.json</code> returned "no changed .cs files" and ran nothing, even though those changes can break tests. They now run the test projects that depend on that project. That was 0.3.3.</li>
+    </ul>
+
+    <p>One claim didn't hold up. A review said calls through an interface are missed. Roslyn's reference search follows interface and override chains, and there's now a test that proves it. Checking each claim against the code before changing anything was worth the time in both directions.</p>
+  </section>
+
+  <section id="how-it-was-built-since-youll-check-the-commits">
+    <h2>How was DotNetDevMCP itself built?</h2>
+    <p>DotNetDevMCP was built with Claude Code, and the git log says so. The setup: one Claude session acted as lead and reviewer and handed pieces of the work to cheaper subagents (Haiku and Sonnet), each in its own git worktree. My job was the one step no agent was allowed to do, which was pressing Merge.</p>
+
+    <p>It was a real collaboration, so both sides made mistakes. I ran <code>mcp-publisher publish</code> before the version it pointed to existed on NuGet and got a polite HTTP 400 back. I found out my PowerShell doesn't accept <code>&amp;&amp;</code> by pasting its error into the chat. I asked "where are we?" often enough that it became the status command.</p>
+
+    <p>The agents did no better. Two subagents searched my entire disk for one file and were still searching eight hours later, when they were stopped. A security subagent hit the monthly spend limit halfway through a fix, and the lead finished it by hand. The lead also overwrote my <code>FUNDING.yml</code> with a one-line version, which would have deleted my Buy Me a Coffee link, then read the diff and put the original back.</p>
+
+    <p>What made it work was a rule both of us followed: nothing changed until it was checked against the code or a measurement. That rule found the six Polly bugs, and it's also why one reviewer's claim was rejected instead of "fixed".</p>
+  </section>
+
+  <section id="the-limits">
+    <h2>What are DotNetDevMCP's current limits?</h2>
+    <ul>
+      <li><strong>Reflection, string-keyed lookups and DI by convention are invisible.</strong> A test that reaches your code only that way won't be selected. <code>dryRun: true</code> shows what was picked and why.</li>
+      <li><strong>No sandbox.</strong> <code>dotnet build</code> and <code>dotnet test</code> run whatever the solution contains, with your permissions, just as they do in your terminal. For code you don't trust, run the agent and the server in a container. <code>--clean-env</code> keeps secrets in environment variables away from child processes; the processes can still read your files and reach the network.</li>
+      <li><strong>NuGet-only dependencies aren't followed.</strong> If a test project uses the changed library through a package reference instead of a project reference, the fallback won't find it.</li>
+      <li><strong>Broad changes cost the same as before.</strong> The win is on the small, frequent edits that make up most of an agent's loop.</li>
+    </ul>
+  </section>
+
+  <section id="try-it">
+    <h2>How do I try DotNetDevMCP on my own solution?</h2>
+    <pre><code class="language-bash">claude mcp add dotnetdevmcp -- dotnet dnx DotNetDevMCP --yes</code></pre>
+    <ul>
+      <li>Code and issues: <a href="https://github.com/csa7mdm/DotNetDevMCP">github.com/csa7mdm/DotNetDevMCP</a></li>
+      <li>Package: <a href="https://www.nuget.org/packages/DotNetDevMCP">nuget.org/packages/DotNetDevMCP</a></li>
+      <li>Tutorial and tool reference: <a href="https://github.com/csa7mdm/DotNetDevMCP/wiki">the wiki</a></li>
+      <li>The benchmark, with scripts to reproduce it: <a href="https://github.com/csa7mdm/DotNetDevMCP/blob/main/benchmarks/polly/README.md">benchmarks/polly</a></li>
+    </ul>
+    <p>If you run it on your own solution, I'd like to hear what it picked and what it missed. The misses are how the six fixes above happened.</p>
+  </section>
+</main>
+</body>
+</html>
