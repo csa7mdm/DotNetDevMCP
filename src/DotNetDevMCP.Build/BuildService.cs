@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using DotNetDevMCP.Core;
 
 namespace DotNetDevMCP.Build;
 
@@ -71,21 +72,38 @@ public class BuildService
         options ??= new BuildOptions();
         var stopwatch = Stopwatch.StartNew();
 
+        var validationError = ValidateOptions(options);
+        if (validationError != null)
+        {
+            return ValidationFailure("BUILD002", validationError, stopwatch.Elapsed);
+        }
+
+        string fullProjectPath;
         try
         {
-            var arguments = BuildArguments("build", projectPath, options);
+            fullProjectPath = NormalizeProjectPath(projectPath);
+        }
+        catch (ArgumentException ex)
+        {
+            return ValidationFailure("BUILD002", ex.Message, stopwatch.Elapsed);
+        }
+
+        try
+        {
+            var arguments = BuildArgumentList("build", fullProjectPath, options);
 
             var startInfo = new ProcessStartInfo
             {
                 FileName = "dotnet",
-                Arguments = arguments,
                 UseShellExecute = false,
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
-                WorkingDirectory = Path.GetDirectoryName(projectPath) ?? Environment.CurrentDirectory
+                WorkingDirectory = Path.GetDirectoryName(fullProjectPath) ?? Environment.CurrentDirectory
             };
+            foreach (var arg in arguments) startInfo.ArgumentList.Add(arg);
+            ChildProcess.Prepare(startInfo);
 
             using var process = new Process { StartInfo = startInfo };
             var output = new List<string>();
@@ -154,21 +172,38 @@ public class BuildService
         options ??= new BuildOptions();
         var stopwatch = Stopwatch.StartNew();
 
+        var validationError = ValidateOptions(options);
+        if (validationError != null)
+        {
+            return ValidationFailure("CLEAN002", validationError, stopwatch.Elapsed);
+        }
+
+        string fullProjectPath;
         try
         {
-            var arguments = BuildArguments("clean", projectPath, options);
+            fullProjectPath = NormalizeProjectPath(projectPath);
+        }
+        catch (ArgumentException ex)
+        {
+            return ValidationFailure("CLEAN002", ex.Message, stopwatch.Elapsed);
+        }
+
+        try
+        {
+            var arguments = BuildArgumentList("clean", fullProjectPath, options);
 
             var startInfo = new ProcessStartInfo
             {
                 FileName = "dotnet",
-                Arguments = arguments,
                 UseShellExecute = false,
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
-                WorkingDirectory = Path.GetDirectoryName(Path.GetFullPath(projectPath)) ?? Environment.CurrentDirectory
+                WorkingDirectory = Path.GetDirectoryName(fullProjectPath) ?? Environment.CurrentDirectory
             };
+            foreach (var arg in arguments) startInfo.ArgumentList.Add(arg);
+            ChildProcess.Prepare(startInfo);
 
             using var process = new Process { StartInfo = startInfo };
             var output = new List<string>();
@@ -221,19 +256,31 @@ public class BuildService
     {
         var stopwatch = Stopwatch.StartNew();
 
+        string fullProjectPath;
+        try
+        {
+            fullProjectPath = NormalizeProjectPath(projectPath);
+        }
+        catch (ArgumentException ex)
+        {
+            return ValidationFailure("RESTORE002", ex.Message, stopwatch.Elapsed);
+        }
+
         try
         {
             var startInfo = new ProcessStartInfo
             {
                 FileName = "dotnet",
-                Arguments = $"restore \"{projectPath}\"",
                 UseShellExecute = false,
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
-                WorkingDirectory = Path.GetDirectoryName(Path.GetFullPath(projectPath)) ?? Environment.CurrentDirectory
+                WorkingDirectory = Path.GetDirectoryName(fullProjectPath) ?? Environment.CurrentDirectory
             };
+            startInfo.ArgumentList.Add("restore");
+            startInfo.ArgumentList.Add(fullProjectPath);
+            ChildProcess.Prepare(startInfo);
 
             using var process = new Process { StartInfo = startInfo };
             var output = new List<string>();
@@ -277,24 +324,60 @@ public class BuildService
         }
     }
 
-    private static string BuildArguments(string command, string projectPath, BuildOptions options)
+    /// <summary>
+    /// Checks every value in <paramref name="options"/> that names something (framework, runtime,
+    /// configuration, MSBuild property names) before it reaches a process argument. Called once up front
+    /// so build/clean fail fast with a clear message instead of handing dotnet a value that could be
+    /// misread as another option or, for a property value, another MSBuild property.
+    /// </summary>
+    private static string? ValidateOptions(BuildOptions options) =>
+        DotnetArgumentValidation.ValidateFramework(options.Framework)
+        ?? DotnetArgumentValidation.ValidateRuntime(options.Runtime)
+        ?? DotnetArgumentValidation.ValidateConfiguration(options.Configuration)
+        ?? (options.Properties?.Keys.Select(DotnetArgumentValidation.ValidatePropertyName).FirstOrDefault(e => e != null));
+
+    /// <summary>Resolves and validates a caller-supplied project/solution path. Doesn't restrict it to any
+    /// directory (building another project on disk is a legitimate use), just normalizes it and rejects
+    /// what isn't a usable path.</summary>
+    private static string NormalizeProjectPath(string projectPath)
     {
-        var args = new List<string> { command, $"\"{projectPath}\"" };
+        if (string.IsNullOrWhiteSpace(projectPath))
+            throw new ArgumentException("projectPath is required.");
+        try
+        {
+            return Path.GetFullPath(projectPath);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            throw new ArgumentException($"Invalid projectPath '{projectPath}': {ex.Message}");
+        }
+    }
 
-        if (options.Configuration != null)
-            args.Add($"--configuration {options.Configuration}");
+    private static BuildResult ValidationFailure(string code, string message, TimeSpan elapsed) => new(
+        Success: false,
+        ExitCode: -1,
+        Duration: elapsed,
+        Warnings: 0,
+        Errors: 1,
+        Output: message,
+        Diagnostics: new[] { new BuildDiagnostic(DiagnosticSeverity.Error, code, message) });
 
-        if (options.Framework != null)
-            args.Add($"--framework {options.Framework}");
+    /// <summary>
+    /// Builds the dotnet CLI arguments for build/clean as a list: each value becomes exactly one
+    /// <see cref="ProcessStartInfo.ArgumentList"/> entry, so .NET does the quoting and a value like
+    /// "1.0 -p:CustomBeforeMicrosoftCommonTargets=C:\evil.targets" can never be split into extra
+    /// arguments the way it would be if concatenated into a single argument string. Assumes
+    /// <see cref="ValidateOptions"/> already passed.
+    /// </summary>
+    public static List<string> BuildArgumentList(string command, string projectPath, BuildOptions options)
+    {
+        var args = new List<string> { command, projectPath };
 
-        if (options.Runtime != null)
-            args.Add($"--runtime {options.Runtime}");
-
-        if (options.NoBuild)
-            args.Add("--no-build");
-
-        if (options.NoRestore)
-            args.Add("--no-restore");
+        if (options.Configuration != null) { args.Add("--configuration"); args.Add(options.Configuration); }
+        if (options.Framework != null) { args.Add("--framework"); args.Add(options.Framework); }
+        if (options.Runtime != null) { args.Add("--runtime"); args.Add(options.Runtime); }
+        if (options.NoBuild) args.Add("--no-build");
+        if (options.NoRestore) args.Add("--no-restore");
 
         if (options.Verbosity != null)
         {
@@ -306,18 +389,19 @@ public class BuildService
                 3 => "detailed",
                 _ => "diagnostic"
             };
-            args.Add($"--verbosity {verbosity}");
+            args.Add("--verbosity");
+            args.Add(verbosity);
         }
 
         if (options.Properties != null)
         {
             foreach (var prop in options.Properties)
             {
-                args.Add($"-p:{prop.Key}={prop.Value}");
+                args.Add($"-p:{prop.Key}={DotnetArgumentValidation.EscapePropertyValue(prop.Value)}");
             }
         }
 
-        return string.Join(" ", args);
+        return args;
     }
 
     private static List<BuildDiagnostic> ParseDiagnostics(string output)

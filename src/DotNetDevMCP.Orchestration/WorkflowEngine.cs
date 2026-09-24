@@ -95,12 +95,14 @@ public class WorkflowEngine : IWorkflowEngine
                 // Execute parallel steps
                 if (parallelSteps.Any())
                 {
-                    var parallelTasks = parallelSteps.Select(step => Task.Run(async () =>
+                    // ExecuteStepAsync is already async and catches its own exceptions (see below), so starting its task
+                    // directly is enough to run steps concurrently - no thread-pool hop via Task.Run needed.
+                    var parallelTasks = parallelSteps.Select(async step =>
                     {
                         ReportProgress(progress, steps.Count, completedSteps, step.Name);
                         var result = await ExecuteStepAsync(step, context, cancellationToken);
                         return (step.Name, result);
-                    }, cancellationToken));
+                    });
 
                     var parallelResults = await Task.WhenAll(parallelTasks);
 

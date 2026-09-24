@@ -29,6 +29,7 @@
     <ProjectReference Include="..\DotNetDevMCP.Analysis\DotNetDevMCP.Analysis.csproj" />
     <ProjectReference Include="..\DotNetDevMCP.Build\DotNetDevMCP.Build.csproj" />
     <ProjectReference Include="..\DotNetDevMCP.CodeIntelligence\DotNetDevMCP.CodeIntelligence.csproj" />
+    <ProjectReference Include="..\DotNetDevMCP.Core\DotNetDevMCP.Core.csproj" />
     <ProjectReference Include="..\DotNetDevMCP.Monitoring\DotNetDevMCP.Monitoring.csproj" />
     <ProjectReference Include="..\DotNetDevMCP.Orchestration\DotNetDevMCP.Orchestration.csproj" />
     <ProjectReference Include="..\DotNetDevMCP.SourceControl\DotNetDevMCP.SourceControl.csproj" />

@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
+using DotNetDevMCP.Core;
 using DotNetDevMCP.Core.Models;
 
 namespace DotNetDevMCP.Testing;
@@ -20,7 +21,9 @@ public sealed class TestRunner
     public async Task<IReadOnlyList<TestCase>> DiscoverAsync(string projectPath, string? filter, CancellationToken ct)
     {
         projectPath = Path.GetFullPath(projectPath);
-        var (exit, stdout, stderr, _) = await RunDotnetAsync($"test \"{projectPath}\" --list-tests{FilterArg(filter)}", ct, DirectoryOf(projectPath));
+        var args = new List<string> { "test", projectPath, "--list-tests" };
+        args.AddRange(FilterArgs(filter));
+        var (exit, stdout, stderr, _) = await RunDotnetAsync(args, ct, DirectoryOf(projectPath));
         if (exit != 0)
         {
             throw new InvalidOperationException($"dotnet test --list-tests failed:\n{Tail(stdout + stderr)}");
@@ -45,8 +48,13 @@ public sealed class TestRunner
     /// would hang the MCP tool call with it. Past this, the whole process tree is killed and a failed summary is returned.</param>
     public async Task<TestRunSummary> RunAsync(string projectOrSolutionPath, string? filter, IReadOnlyCollection<string>? testNames, bool noBuild, string? framework, CancellationToken ct, int timeoutSeconds = 600)
     {
+        var frameworkError = DotnetArgumentValidation.ValidateFramework(framework);
+        if (frameworkError != null) return TestRunSummary.Failed(frameworkError, TimeSpan.Zero);
+
         projectOrSolutionPath = Path.GetFullPath(projectOrSolutionPath);
-        return UsesTestingPlatform(projectOrSolutionPath)
+        var mtp = UsesTestingPlatform(projectOrSolutionPath);
+        if (mtp && ValidateTestingPlatformFilter(filter) is { } filterError) return TestRunSummary.Failed(filterError, TimeSpan.Zero);
+        return mtp
             ? await RunTestingPlatformAsync(projectOrSolutionPath, filter, testNames, noBuild, framework, ct, timeoutSeconds)
             : await RunVsTestAsync(projectOrSolutionPath, filter, testNames, noBuild, framework, ct, timeoutSeconds);
     }
@@ -88,13 +96,15 @@ public sealed class TestRunner
         (int ExitCode, string Stdout, string Stderr, bool TimedOut) run = default;
         foreach (var xunit in IsXunitByPath.TryGetValue(path, out var known) ? new[] { known } : new[] { true, false })
         {
-            var args = new StringBuilder($"test {target} \"{path}\"");
-            if (noBuild) args.Append(" --no-build");
-            if (!string.IsNullOrWhiteSpace(framework)) args.Append($" --framework {framework}");
-            args.Append(xunit ? " --report-xunit-trx" : " --report-trx");
-            args.Append(TestingPlatformNameFilter(testNames, xunit));
-            if (!string.IsNullOrWhiteSpace(filter)) args.Append(' ').Append(filter); // the framework's own filter options, verbatim
-            run = await RunDotnetAsync(args.ToString(), ct, DirectoryOf(path), TimeSpan.FromSeconds(timeoutSeconds));
+            var args = new List<string> { "test", target, path };
+            if (noBuild) args.Add("--no-build");
+            if (!string.IsNullOrWhiteSpace(framework)) { args.Add("--framework"); args.Add(framework); }
+            args.Add(xunit ? "--report-xunit-trx" : "--report-trx");
+            // TestingPlatformNameFilter still returns its quoted string form (tested as such); splitting it back
+            // into argv tokens here reproduces exactly what it describes, one ArgumentList entry per token.
+            args.AddRange(SplitArgs(TestingPlatformNameFilter(testNames, xunit)));
+            if (!string.IsNullOrWhiteSpace(filter)) args.AddRange(SplitArgs(filter)); // the framework's own filter options, verbatim
+            run = await RunDotnetAsync(args, ct, DirectoryOf(path), TimeSpan.FromSeconds(timeoutSeconds));
             if (run.ExitCode != MtpInvalidCommandLine) { if (!run.TimedOut) IsXunitByPath[path] = xunit; break; }
             noBuild = true; // the first attempt already built
         }
@@ -178,6 +188,21 @@ public sealed class TestRunner
 
     private const int MaxFilterChars = 24_000; // Windows caps a command line at 32,767 chars
 
+    /// <summary>
+    /// Exact-name OR filter for VSTest, widened past <see cref="MaxFilterChars"/> the same way
+    /// <see cref="TestingPlatformNameFilter"/> widens for MTP: first to one contains-term per class, then
+    /// (still too long) to null, meaning "no name filter" — every widening step is a superset of the exact
+    /// names, so a run under the widened filter never executes fewer tests than the caller asked for.
+    /// </summary>
+    public static string? WidenVsTestFilter(IReadOnlyCollection<string> names)
+    {
+        var byName = string.Join("|", names.Select(n => $"FullyQualifiedName={n}"));
+        if (byName.Length <= MaxFilterChars) return byName;
+        var classes = names.Select(n => n.LastIndexOf('.') is var i and > 0 ? n[..i] : n).Distinct().ToList();
+        var byClass = string.Join("|", classes.Select(c => $"FullyQualifiedName~{c}."));
+        return byClass.Length <= MaxFilterChars ? byClass : null;
+    }
+
     private async Task<TestRunSummary> RunVsTestAsync(string projectOrSolutionPath, string? filter, IReadOnlyCollection<string>? testNames, bool noBuild, string? framework, CancellationToken ct, int timeoutSeconds)
     {
         var resultsDir = Path.Combine(Path.GetTempPath(), "dotnetdevmcp-trx", Guid.NewGuid().ToString("N"));
@@ -186,23 +211,23 @@ public sealed class TestRunner
         var fullFilter = filter;
         if (testNames is { Count: > 0 })
         {
-            // ponytail: OR of exact names. Command lines cap around 32k chars on Windows; ~200 long names is the practical ceiling,
-            // above that callers should run the whole project.
-            var byName = string.Join("|", testNames.Select(n => $"FullyQualifiedName={n}"));
-            fullFilter = string.IsNullOrEmpty(filter) ? byName : $"({filter})&({byName})";
+            var widened = WidenVsTestFilter(testNames);
+            fullFilter = widened is null
+                ? filter // widening gave up entirely: fall back to just the base filter (or none), a superset of the exact names.
+                : string.IsNullOrEmpty(filter) ? widened : $"({filter})&({widened})";
         }
 
-        var args = new StringBuilder($"test \"{projectOrSolutionPath}\" --logger trx --results-directory \"{resultsDir}\"");
-        if (noBuild) args.Append(" --no-build");
-        if (!string.IsNullOrWhiteSpace(framework)) args.Append($" --framework {framework}");
+        var args = new List<string> { "test", projectOrSolutionPath, "--logger", "trx", "--results-directory", resultsDir };
+        if (noBuild) args.Add("--no-build");
+        if (!string.IsNullOrWhiteSpace(framework)) { args.Add("--framework"); args.Add(framework); }
         // Named per-test, not per-run: the process timeout below already bounds the whole run. Naming the hanging test needs a
         // shorter per-test window, capped at the run timeout so it can never itself become the reason nothing finishes in time.
         var hangTimeout = Math.Min(120, timeoutSeconds);
-        args.Append($" --blame-hang --blame-hang-timeout {hangTimeout}s --blame-hang-dump-type none"); // the name, not a multi-GB dump
-        args.Append(FilterArg(fullFilter));
+        args.Add("--blame-hang"); args.Add("--blame-hang-timeout"); args.Add($"{hangTimeout}s"); args.Add("--blame-hang-dump-type"); args.Add("none"); // the name, not a multi-GB dump
+        args.AddRange(FilterArgs(fullFilter));
 
         var sw = Stopwatch.StartNew();
-        var run = await RunDotnetAsync(args.ToString(), ct, DirectoryOf(projectOrSolutionPath), TimeSpan.FromSeconds(timeoutSeconds));
+        var run = await RunDotnetAsync(args, ct, DirectoryOf(projectOrSolutionPath), TimeSpan.FromSeconds(timeoutSeconds));
         sw.Stop();
 
         if (run.TimedOut)
@@ -267,7 +292,62 @@ public sealed class TestRunner
             results);
     }
 
-    private static string FilterArg(string? filter) => string.IsNullOrWhiteSpace(filter) ? "" : $" --filter \"{filter.Replace("\"", "\\\"")}\"";
+    private static IEnumerable<string> FilterArgs(string? filter) =>
+        string.IsNullOrWhiteSpace(filter) ? [] : ["--filter", filter];
+
+    /// <summary>
+    /// Splits a raw options string into argv tokens on whitespace, respecting double-quoted segments (so
+    /// e.g. <c>--filter-method "My Test"</c> becomes two tokens, not four). Used to turn a string built for
+    /// display/length-checking (<see cref="TestingPlatformNameFilter"/>) or a caller-supplied "verbatim"
+    /// options string into individual <see cref="ProcessStartInfo.ArgumentList"/> entries.
+    /// </summary>
+    internal static IReadOnlyList<string> SplitArgs(string raw) => SplitArgsCore(raw);
+
+    /// <summary>
+    /// Under Microsoft.Testing.Platform the filter is passed as the test framework's own options, split into arguments.
+    /// `dotnet test` would also accept MSBuild options there (<c>-p:CustomBeforeMicrosoftCommonTargets=...</c> imports a
+    /// targets file), so every option in it must be a filter option: <c>--filter*</c> (xUnit v3, MSTest, NUnit) or
+    /// <c>--treenode-filter</c> (TUnit). Values between options are left alone. Returns an error, or null if allowed.
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex MsBuildSlashSwitch = new(@"^/[A-Za-z][A-Za-z0-9-]*([:=].*)?$");
+
+    public static string? ValidateTestingPlatformFilter(string? filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter)) return null;
+        foreach (var token in SplitArgsCore(filter))
+        {
+            // A value (method name, TUnit tree path like /*/*/MyClass/*) passes. MSBuild also takes Windows-style switches
+            // (/p:X=1), so a '/' token that is shaped like one (/word, or /word: or /word= followed by anything) counts as an option; tree paths continue with '/' or '*' instead.
+            if (!token.StartsWith('-') && !MsBuildSlashSwitch.IsMatch(token)) continue;
+            var option = token.Split('=', ':')[0];
+            if (!option.StartsWith("--filter", StringComparison.Ordinal) && option != "--treenode-filter")
+            {
+                return $"Invalid filter option '{token}': under Microsoft.Testing.Platform only --filter* and --treenode-filter options are allowed.";
+            }
+        }
+        return null;
+    }
+
+    private static IReadOnlyList<string> SplitArgsCore(string raw)
+    {
+        var result = new List<string>();
+        var current = new StringBuilder();
+        var inQuotes = false;
+        var hasToken = false;
+        foreach (var c in raw)
+        {
+            if (c == '"') { inQuotes = !inQuotes; hasToken = true; continue; }
+            if (!inQuotes && char.IsWhiteSpace(c))
+            {
+                if (hasToken) { result.Add(current.ToString()); current.Clear(); hasToken = false; }
+                continue;
+            }
+            current.Append(c);
+            hasToken = true;
+        }
+        if (hasToken) result.Add(current.ToString());
+        return result;
+    }
 
     private static string Tail(string s, int lines = 40)
     {
@@ -281,18 +361,20 @@ public sealed class TestRunner
     /// </summary>
     public static string DirectoryOf(string path) => Directory.Exists(path) ? path : Path.GetDirectoryName(Path.GetFullPath(path))!;
 
-    internal static Task<(int ExitCode, string Stdout, string Stderr, bool TimedOut)> RunDotnetAsync(string arguments, CancellationToken ct, string? workingDirectory = null, TimeSpan? timeout = null)
+    internal static Task<(int ExitCode, string Stdout, string Stderr, bool TimedOut)> RunDotnetAsync(IReadOnlyList<string> arguments, CancellationToken ct, string? workingDirectory = null, TimeSpan? timeout = null)
         => RunProcessAsync("dotnet", arguments, ct, workingDirectory, timeout);
 
     /// <summary>
     /// Runs a child with all three std handles redirected: in stdio mode the parent's stdin/stdout ARE the MCP channel.
     /// A run must always return, so <paramref name="timeout"/> bounds it: past it, the whole process tree is killed
     /// (a child dotnet/testhost survives its parent otherwise) and TimedOut comes back true instead of throwing.
+    /// Arguments go through <see cref="ProcessStartInfo.ArgumentList"/>, one entry per value, so .NET does the
+    /// quoting and nothing can smuggle in extra arguments the way concatenating a single argument string would allow.
     /// </summary>
     internal static async Task<(int ExitCode, string Stdout, string Stderr, bool TimedOut)> RunProcessAsync(
-        string fileName, string arguments, CancellationToken ct, string? workingDirectory = null, TimeSpan? timeout = null)
+        string fileName, IReadOnlyList<string> arguments, CancellationToken ct, string? workingDirectory = null, TimeSpan? timeout = null)
     {
-        var psi = new ProcessStartInfo(fileName, arguments)
+        var psi = new ProcessStartInfo(fileName)
         {
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
@@ -301,7 +383,9 @@ public sealed class TestRunner
             CreateNoWindow = true,
             WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory,
         };
+        foreach (var arg in arguments) psi.ArgumentList.Add(arg);
         psi.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en"; // we grep "The following Tests are available"
+        ChildProcess.Prepare(psi);
         using var p = Process.Start(psi) ?? throw new InvalidOperationException($"Could not start {fileName}");
         p.StandardInput.Close();
         // Read against `ct` only, never the timeout token: killing the process closes these pipes (EOF), so both tasks

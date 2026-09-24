@@ -3,6 +3,34 @@
 All notable changes to DotNetDevMCP are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [0.3.2] - 2026-09-24
+
+Security release, prompted by two external reviews; each claim was checked against the code first. Upgrade from 0.3.0/0.3.1.
+
+### Security
+- **Argument injection.** Tool values were concatenated into `dotnet`/`git` command lines, so a crafted value could add options:
+  an MSBuild property value like `1.0 -p:CustomBeforeMicrosoftCommonTargets=evil.targets` imported a targets file (code
+  execution during the build), a `gitBase` like `--output=...` made git write a file, and `framework`, branch and remote values
+  could add flags. Every child process now receives its arguments as a list (one value, one argument); framework, runtime,
+  configuration, MSBuild property names and git refs are validated; property values escape MSBuild's `;` and `,` list
+  separators; under Microsoft.Testing.Platform the `filter` may only carry `--filter*` / `--treenode-filter` options.
+- **Path check.** Roslyn edit tools checked "inside the solution" with a plain string prefix, so `..` segments and look-alike
+  sibling folders (`App-other` for `App`) passed. Paths are now resolved before comparing.
+
+### Added
+- `--clean-env`: child processes get a minimal allow-listed environment (PATH, temp and profile folders, proxies, `DOTNET_*`,
+  `NUGET_*`, `MSBUILD*`...) instead of inheriting the server's, so tokens and cloud credentials in environment variables aren't
+  passed on. Not a sandbox. Startup logs how many variables were dropped; `--log-level Debug` lists their names.
+- `dotnet_test_affected` project-level fallback: when the selection runs out of budget or is too large, it runs only the test
+  projects that reference the changed projects (`ranScope: "projects"`, `testProjectsRun`), not the whole solution. Helper
+  libraries that reference a test framework but declare no tests are skipped.
+- Security model in SECURITY.md, the README and the [wiki](https://github.com/csa7mdm/DotNetDevMCP/wiki/Security).
+
+### Fixed
+- The VSTest name filter had no length limit (Windows caps command lines at 32K); it now widens to classes, then to no
+  filter, like the Microsoft.Testing.Platform path.
+- `WorkflowEngine` no longer wraps already-async steps in `Task.Run`.
+
 ## [0.3.1] - 2026-09-24
 
 Documentation and community release; no behavior changes.

@@ -197,6 +197,71 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
         Path.GetFileName(r.Display ?? "") is var f && (f.StartsWith("xunit", StringComparison.OrdinalIgnoreCase) || f.StartsWith("nunit", StringComparison.OrdinalIgnoreCase)
             || f.StartsWith("Microsoft.VisualStudio.TestPlatform.TestFramework", StringComparison.OrdinalIgnoreCase) || f.StartsWith("TUnit", StringComparison.OrdinalIgnoreCase)));
 
+    /// <summary>
+    /// Cheap fallback for when the reference walk in <see cref="FindAsync(Solution,IEnumerable{string},int,TimeSpan,ILogger,CancellationToken)"/>
+    /// can't finish, or finishes with too large a selection: instead of tracing symbols, walk the project reference graph.
+    /// Returns every test project that (transitively) references, via a Roslyn <see cref="ProjectReference"/>, a project
+    /// containing one of the changed files - or contains one itself. This is a superset of the affected tests (reflection
+    /// aside) and cheap, since it only looks at the project graph, not symbols or syntax.
+    /// </summary>
+    /// <remarks>
+    /// Reachability is computed over every TFM variant of every project (unlike <see cref="SearchScope"/>, which keeps only
+    /// the highest-TFM variant): a project's net8.0 variant can reference a different variant of a changed library than its
+    /// net10.0 variant does, so dropping variants here could miss a real edge. The result is deduped to project FILE paths
+    /// only at the very end, once every variant has had its say.
+    /// ponytail: a test project that depends on the changed code only through a PackageReference (no ProjectReference) has no
+    /// edge in this graph and will not be found. That's a real gap, not a bug - documenting it here and in the tool's
+    /// response note is the fix, since detecting package-mediated dependencies would need a much heavier analysis.
+    /// </remarks>
+    public static IReadOnlyList<string> FindAffectedTestProjects(Solution solution, IEnumerable<string> changedFiles)
+    {
+        var changedProjectIds = new HashSet<ProjectId>();
+        foreach (var file in changedFiles)
+        {
+            var full = Path.GetFullPath(file);
+            foreach (var id in solution.GetDocumentIdsWithFilePath(full)) changedProjectIds.Add(id.ProjectId);
+        }
+        if (changedProjectIds.Count == 0) return [];
+
+        // Reverse ProjectReference edges (referenced -> referencing projects), across all TFM variants.
+        var dependents = new Dictionary<ProjectId, List<ProjectId>>();
+        foreach (var project in solution.Projects)
+        {
+            foreach (var reference in project.ProjectReferences)
+            {
+                if (!dependents.TryGetValue(reference.ProjectId, out var list)) dependents[reference.ProjectId] = list = [];
+                list.Add(project.Id);
+            }
+        }
+
+        var reachable = new HashSet<ProjectId>(changedProjectIds);
+        var frontier = new Queue<ProjectId>(changedProjectIds);
+        while (frontier.Count > 0)
+        {
+            if (!dependents.TryGetValue(frontier.Dequeue(), out var deps)) continue;
+            foreach (var dep in deps) if (reachable.Add(dep)) frontier.Enqueue(dep);
+        }
+
+        return reachable.Select(solution.GetProject).OfType<Project>().Where(IsRunnableTestProject)
+            .Select(p => p.FilePath).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>
+    /// A project `dotnet test` can run: references a test framework AND declares a test method. Helper libraries such as
+    /// Polly.TestUtils reference xUnit without containing tests, and `dotnet test` on them fails with "No test projects were found".
+    /// Syntax only, so cheap; a syntax tree already parsed is cached by the workspace.
+    /// </summary>
+    private static bool IsRunnableTestProject(Project p) =>
+        // ponytail: synchronous parse; the server has no synchronization context and parsing is cheap next to the build that follows.
+        IsTestProject(p) && p.Documents.Any(d => d.GetSyntaxRootAsync().GetAwaiter().GetResult() is { } root
+            && root.DescendantNodes().OfType<MethodDeclarationSyntax>().Any(HasTestAttributeSyntax));
+
+    /// <summary>Every test project in the solution, deduped by file path across TFM variants. Denominator for deciding
+    /// whether <see cref="FindAffectedTestProjects"/> reached "basically everything", where running the whole solution
+    /// in one invocation is simpler than filtering to a selection that isn't actually smaller.</summary>
+    public static IReadOnlyList<string> AllTestProjectFilePaths(Solution solution) =>
+        solution.Projects.Where(IsRunnableTestProject).Select(p => p.FilePath).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
     /// <summary>"Polly.Core.Tests(net10.0)" -> 10.0; no TFM suffix -> 0.</summary>
     private static Version TfmVersion(string projectName)
     {

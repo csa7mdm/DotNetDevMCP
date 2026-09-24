@@ -55,7 +55,7 @@ claude mcp add dotnetdevmcp -- dnx DotNetDevMCP --yes
 
 `dnx` downloads the package from NuGet.org on first run. Prefer a permanent install? `dotnet tool install -g DotNetDevMCP`, then use `dotnetdevmcp` as the command.
 
-Pass `--load-solution <path>` to have Roslyn load your solution at startup, or let the agent call `SharpTool_LoadSolution` when it needs to. `--http --port 3001` serves Streamable HTTP instead of stdio. `dotnetdevmcp --help` lists everything.
+Pass `--load-solution <path>` to have Roslyn load your solution at startup, or let the agent call `SharpTool_LoadSolution` when it needs to. `--http --port 3001` serves Streamable HTTP instead of stdio (localhost only, no authentication: see [Security](#security)). `--clean-env` starts `dotnet` and `git` with a minimal environment so tokens and cloud credentials in environment variables aren't passed on. `dotnetdevmcp --help` lists everything.
 
 Git and Monitoring tools (see the table below) are off by default - a shell an agent already has covers them, and every registered tool costs context tokens in every session. Pass `--enable git,monitoring` (comma-separated and/or repeated, e.g. `--enable git --enable monitoring`) to turn either or both on.
 
@@ -136,9 +136,18 @@ On this repository, editing `ConcurrentExecutor.cs` selects 22 of 44 tests (the 
 | `dotnet_test_run` | 44 | 8.3 s |
 | `dotnet_test_affected` (change to `ConcurrentExecutor.cs`) | 22 | 6.6 s |
 
-The suite here is small, so the saving is small. On a real library the picture is clearer: [benchmarks/polly](https://github.com/csa7mdm/DotNetDevMCP/blob/main/benchmarks/polly/README.md) replays 40 Polly commits and injects faults into its code. A one-file change ran its 5 affected tests in 4.6 s against 33 s for the net10.0 suite, and the selections included 111 of the 112 tests the injected faults broke (the miss builds its object through reflection). Changes that reach hundreds of tests gain nothing: of the last 40 commits, 16 ran a filtered selection and 24 ran the full suite. The first selection of a session on busy code is slower (Roslyn binds the files it touches, then caches them). `dryRun: true` shows what it picked and why (`via`).
+The suite here is small, so the saving is small. On a real library the picture is clearer: [benchmarks/polly](https://github.com/csa7mdm/DotNetDevMCP/blob/main/benchmarks/polly/README.md) replays 40 Polly commits and injects faults into its code. A one-file change ran its 5 affected tests in 5.1 s against 48.1 s for the net10.0 suite (same session), and the selections included 111 of the 112 tests the injected faults broke (the miss builds its object through reflection). Changes that reach hundreds of tests gain nothing: of the last 40 commits, 16 ran a filtered selection and 24 ran the full suite. The first selection of a session on busy code is slower (Roslyn binds the files it touches, then caches them). `dryRun: true` shows what it picked and why (`via`).
 
 ![Benchmark on Polly: 5 affected tests in 5.1 s against 48.1 s for the full suite; 6.5 KB of references against 202 KB of grep output](https://raw.githubusercontent.com/csa7mdm/DotNetDevMCP/main/docs/images/benchmark-polly.svg)
+
+## Security
+
+DotNetDevMCP runs as you, for an agent you trust with your code. `dotnet build` and `dotnet test` execute whatever the solution
+contains, so a malicious test or `.csproj` runs with your privileges, exactly as it would in your terminal; the server adds no
+sandbox. What it does guarantee: tool arguments can't smuggle extra options into `dotnet` or `git`, Roslyn edits stay inside the
+solution directory, and `--clean-env` keeps secrets in environment variables away from child processes. For code you don't
+trust, run the agent and the server in a container with no credentials. Don't expose `--http` beyond localhost. Details:
+[SECURITY.md](https://github.com/csa7mdm/DotNetDevMCP/blob/main/SECURITY.md#security-model).
 
 ## Help, feedback and contributing
 
@@ -183,7 +192,7 @@ Built on the official [MCP C# SDK](https://github.com/modelcontextprotocol/cshar
 
 ## Status
 
-0.3.1. The Roslyn tools are mature (they come from SharpTools). Testing, build, git and orchestration are newer and have been exercised on this repository and a few others; expect rough edges on unusual project layouts. Issues and PRs welcome, see [CONTRIBUTING](https://github.com/csa7mdm/DotNetDevMCP/blob/main/CONTRIBUTING.md).
+0.3.2. The Roslyn tools are mature (they come from SharpTools). Testing, build, git and orchestration are newer and have been exercised on this repository and a few others; expect rough edges on unusual project layouts. Issues and PRs welcome, see [CONTRIBUTING](https://github.com/csa7mdm/DotNetDevMCP/blob/main/CONTRIBUTING.md).
 
 Known gaps: `dotnet_test_affected` follows C# references only (no reflection, no DI-by-convention, no string-keyed lookups), so a change reached only through those paths will not select the test; use `dryRun` to check what it picks. Tests that hang instead of failing are only caught by a run that finishes. Test attribute detection covers xUnit, NUnit and MSTest by attribute name. Past the command-line length limit the filter widens from methods to classes, then to the whole project (more tests, never fewer).
 
