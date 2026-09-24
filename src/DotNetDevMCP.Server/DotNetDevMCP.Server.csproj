@@ -15,11 +15,12 @@
     <PackageId>DotNetDevMCP</PackageId>
     <PackageType>McpServer</PackageType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageIcon></PackageIcon>
+    <PackageIcon>icon.png</PackageIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\icon.png" Pack="true" PackagePath="\" />
     <!-- Full file path with forward slashes: "\.mcp\" packed as ".mcp//server.json" on Linux, which nuget.org does not detect. -->
     <None Include=".mcp\server.json" Pack="true" PackagePath=".mcp/server.json" />
   </ItemGroup>

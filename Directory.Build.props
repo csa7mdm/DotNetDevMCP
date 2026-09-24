@@ -9,10 +9,10 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn> <!-- Missing XML comment for publicly visible type or member -->
 
     <!-- Version Information -->
-    <Version>0.3.0</Version>
+    <Version>0.3.1</Version>
     <IsPackable>false</IsPackable>
     <AssemblyVersion>0.2.0.0</AssemblyVersion>
-    <FileVersion>0.3.0.0</FileVersion>
+    <FileVersion>0.3.1.0</FileVersion>
 
     <!-- Package Metadata -->
     <Authors>Ahmed Mustafa</Authors>
@@ -20,7 +20,8 @@
     <Product>DotNetDevMCP</Product>
     <Copyright>Copyright © 2025 Ahmed Mustafa</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/csa7mdm/DotNetDevMCP</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/csa7mdm/DotNetDevMCP/wiki</PackageProjectUrl>
+    <PackageReleaseNotes>https://github.com/csa7mdm/DotNetDevMCP/blob/main/CHANGELOG.md</PackageReleaseNotes>
     <RepositoryUrl>https://github.com/csa7mdm/DotNetDevMCP</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>mcp;mcp-server;model-context-protocol;dotnet;csharp;roslyn;testing;build;ai;agents</PackageTags>

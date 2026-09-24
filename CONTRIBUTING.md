@@ -2,6 +2,31 @@
 
 Thank you for your interest in contributing to DotNetDevMCP! This document provides guidelines for contributing to the project.
 
+## Start here
+
+You don't need to write code to help. In order of how much they help right now:
+
+1. **Run it on your solution and tell us what happened.** Especially large or multi-targeted solutions, and test suites on
+   Microsoft.Testing.Platform, NUnit, MSTest or TUnit. A [bug report](https://github.com/csa7mdm/DotNetDevMCP/issues/new?template=bug_report.yml)
+   or a note in [Discussions](https://github.com/csa7mdm/DotNetDevMCP/discussions) with numbers is gold.
+2. **Pick a [good first issue](https://github.com/csa7mdm/DotNetDevMCP/labels/good%20first%20issue)** and say in a comment
+   that you're on it. The maintainer will answer questions and review quickly.
+3. **Improve the [wiki](https://github.com/csa7mdm/DotNetDevMCP/wiki).** Setup for another MCP client, a clearer tutorial
+   step, a troubleshooting entry for something that tripped you up.
+
+Where things live: Roslyn tools in `src/DotNetDevMCP.CodeIntelligence`, test running and affected-test selection in
+`src/DotNetDevMCP.Testing`, the CLI and tool registration in `src/DotNetDevMCP.Server/Program.cs`. The
+[Architecture](https://github.com/csa7mdm/DotNetDevMCP/wiki/Architecture) wiki page has the picture.
+
+Three rules that have caused real bugs here:
+
+- Tool parameters are arrays (`string[]`), never `IEnumerable<T>`: the MCP C# SDK tries to resolve `IEnumerable<T>` from DI.
+- Child processes (`dotnet`, `git`) redirect and close stdin. In stdio mode the server's stdin is the MCP connection.
+- CI runs on Linux and Windows. Build paths with `Path.Combine`, and don't assume `C:\`.
+
+Changing how tests are selected or run? Re-run the Polly benchmark in [benchmarks/polly](benchmarks/polly/README.md)
+and put the before/after numbers in the pull request.
+
 ## Development Philosophy
 
 - **Test-Driven Development (TDD)**: Write tests before implementation
@@ -338,15 +363,10 @@ Update `docs/ai-context/project-context.json` when:
 
 ## Questions?
 
-- Open an issue for questions
-- Tag maintainers in discussions
-- Check existing issues and PRs first
+Ask in [Discussions](https://github.com/csa7mdm/DotNetDevMCP/discussions); no question is too small. Check existing issues and pull requests first.
 
 ## Code of Conduct
 
-- Be respectful and inclusive
-- Focus on constructive feedback
-- Help others learn and grow
-- Celebrate contributions
+Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 Thank you for contributing to DotNetDevMCP!

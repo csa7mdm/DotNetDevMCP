@@ -1,0 +1,33 @@
+name: Feature request
+description: A tool you wish existed, or a way an existing tool could help your agent more.
+title: "[Feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are welcome. The most useful requests describe what your agent was trying to do and where it got stuck.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What were you (or your agent) trying to do?
+      placeholder: "The agent renamed a method, then had to run the whole test suite to check it..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help?
+      description: A new tool, a new parameter, a different output shape...
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What do you do today instead?
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to work on this myself (the maintainer will help you get started).

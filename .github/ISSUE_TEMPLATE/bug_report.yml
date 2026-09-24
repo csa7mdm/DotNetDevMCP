@@ -1,0 +1,77 @@
+name: Bug report
+description: A tool returned something wrong, failed, or hung.
+title: "[Bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. A short report with the tool name and what you passed it is more useful than a long one.
+        Not sure it's a bug? Ask in [Discussions](https://github.com/csa7mdm/DotNetDevMCP/discussions) first.
+        Security problem? Please report it [privately](https://github.com/csa7mdm/DotNetDevMCP/security/advisories/new) instead.
+  - type: input
+    id: version
+    attributes:
+      label: DotNetDevMCP version
+      description: "`dotnetdevmcp --version`, or the version in your `dnx DotNetDevMCP@x.y.z` command."
+      placeholder: "0.3.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: MCP client
+      options:
+        - Claude Code
+        - Claude Desktop
+        - VS Code / GitHub Copilot
+        - Visual Studio
+        - Cursor
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and .NET SDK
+      placeholder: "Windows 11, .NET SDK 10.0.401"
+    validations:
+      required: true
+  - type: input
+    id: tool
+    attributes:
+      label: Tool
+      description: Which tool misbehaved?
+      placeholder: "dotnet_test_affected"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+      description: Include the arguments the tool was called with if you can see them in your client.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: A public repository and commit is ideal. Otherwise, describe the solution (project count, multi-targeting, .sln or .slnx).
+  - type: dropdown
+    id: tests
+    attributes:
+      label: Test setup (for testing tools)
+      options:
+        - Not a testing tool
+        - xUnit v3 on Microsoft.Testing.Platform
+        - xUnit v2 / VSTest
+        - NUnit
+        - MSTest
+        - TUnit
+        - Other
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "Start the server with `--log-level Debug --log-directory <dir>` and paste the relevant part."
+      render: text

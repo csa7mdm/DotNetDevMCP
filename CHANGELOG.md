@@ -3,6 +3,18 @@
 All notable changes to DotNetDevMCP are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [0.3.1] - 2026-09-24
+
+Documentation and community release; no behavior changes.
+
+### Added
+- Diagrams in the README (how it works, how affected tests are chosen, the Polly benchmark), rendered on GitHub and nuget.org.
+- Package icon; the NuGet "Project website" and the MCP Registry `websiteUrl` point to the [wiki](https://github.com/csa7mdm/DotNetDevMCP/wiki) (tutorial, tool reference, troubleshooting).
+- Code of Conduct; bug and feature issue forms; a "Start here" section in CONTRIBUTING.
+
+### Fixed
+- README links were relative and broke on nuget.org; they are absolute now.
+
 ## [0.3.0] - 2026-09-23
 
 Found by running the tools on [Polly](https://github.com/App-vNext/Polly); method and numbers in [benchmarks/polly](benchmarks/polly/README.md).

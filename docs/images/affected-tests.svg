@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="330" viewBox="0 0 880 330" font-family="Segoe UI, -apple-system, Helvetica, Arial, sans-serif">
+  <title>How dotnet_test_affected chooses tests</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#57606a"/>
+    </marker>
+  </defs>
+  <rect x="0.5" y="0.5" width="879" height="329" rx="14" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="30" y="40" font-size="17" font-weight="700" fill="#1f2328">dotnet_test_affected: which tests does my change need?</text>
+
+  <!-- Steps -->
+  <g font-size="13" text-anchor="middle">
+    <rect x="30" y="70" width="150" height="76" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+    <text x="105" y="100" font-weight="600" fill="#1f2328">Changed files</text>
+    <text x="105" y="120" fill="#57606a">git working tree</text>
+    <text x="105" y="136" fill="#57606a">or gitBase: "main"</text>
+
+    <rect x="210" y="70" width="150" height="76" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+    <text x="285" y="100" font-weight="600" fill="#1f2328">Symbols</text>
+    <text x="285" y="120" fill="#57606a">methods, properties,</text>
+    <text x="285" y="136" fill="#57606a">constructors, fields</text>
+
+    <rect x="390" y="70" width="170" height="76" rx="10" fill="#f3f0fd" stroke="#512bd4" stroke-width="1.5"/>
+    <text x="475" y="100" font-weight="600" fill="#512bd4">Walk references</text>
+    <text x="475" y="120" fill="#57606a">up to 8 hops (Roslyn)</text>
+    <text x="475" y="136" fill="#57606a">budget: 10 seconds</text>
+
+    <rect x="590" y="70" width="150" height="76" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+    <text x="665" y="100" font-weight="600" fill="#1f2328">Test methods</text>
+    <text x="665" y="120" fill="#57606a">[Fact] [Theory] [Test]</text>
+    <text x="665" y="136" fill="#57606a">[TestMethod] ...</text>
+  </g>
+  <line x1="182" y1="108" x2="206" y2="108" stroke="#57606a" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="362" y1="108" x2="386" y2="108" stroke="#57606a" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="562" y1="108" x2="586" y2="108" stroke="#57606a" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Decision -->
+  <line x1="665" y1="148" x2="665" y2="170" stroke="#57606a" stroke-width="2" marker-end="url(#arrow)"/>
+  <polygon points="665,174 790,212 665,250 540,212" fill="#fff8c5" stroke="#bf8700" stroke-width="1.5"/>
+  <text x="665" y="207" text-anchor="middle" font-size="13" font-weight="600" fill="#1f2328">Finished in budget</text>
+  <text x="665" y="225" text-anchor="middle" font-size="13" font-weight="600" fill="#1f2328">and ≤ 20% of tests?</text>
+
+  <!-- Yes branch -->
+  <line x1="540" y1="212" x2="420" y2="212" stroke="#1a7f37" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="480" y="204" text-anchor="middle" font-size="12" font-weight="600" fill="#1a7f37">yes</text>
+  <rect x="30" y="182" width="386" height="60" rx="10" fill="#dafbe1" stroke="#1a7f37"/>
+  <text x="223" y="207" text-anchor="middle" font-size="14" font-weight="600" fill="#1a7f37">Run only those tests</text>
+  <text x="223" y="227" text-anchor="middle" font-size="12" fill="#1f2328">each with a "via" chain explaining why it was picked</text>
+
+  <!-- No branch -->
+  <line x1="665" y1="252" x2="665" y2="266" stroke="#bc4c00" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="680" y="264" font-size="12" font-weight="600" fill="#bc4c00">no</text>
+  <rect x="455" y="270" width="400" height="44" rx="10" fill="#fff1e5" stroke="#bc4c00"/>
+  <text x="655" y="297" text-anchor="middle" font-size="13" fill="#1f2328"><tspan font-weight="600" fill="#bc4c00">Run the whole solution</tspan> and say why: never a partial set</text>
+
+  <text x="30" y="290" font-size="12" fill="#57606a">Measured on Polly: 111 of 112 tests broken by</text>
+  <text x="30" y="307" font-size="12" fill="#57606a">injected faults were selected. Misses: reflection.</text>
+</svg>
