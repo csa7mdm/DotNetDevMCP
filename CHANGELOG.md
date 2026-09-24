@@ -37,9 +37,9 @@ All notable changes to DotNetDevMCP are documented here. The format follows
   `obj/project.assets.json` (not restored) are called out in the note when the run falls back to whole test projects.
 
 ### Fixed
-- `dotnet_test_affected`: a changed `.txt`, `.png` or other "documentation" file inside a project folder (test data such as
-  `TestData/expected.txt`) was ignored, so nothing ran. Only such files outside every project are ignored now; inside a
-  project they select that project's tests.
+- `dotnet_test_affected`: a changed `.txt` or image inside a project folder (test data such as `TestData/expected.txt` or
+  Verify's `*.verified.txt`) was ignored, so nothing ran. It now selects that project's tests. `.md` files, and
+  documentation outside every project, are still ignored; a project at the solution root doesn't make docs count.
 
 ## [0.3.3] - 2026-09-24
 

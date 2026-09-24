@@ -87,10 +87,8 @@ public static class TestingTools
         var files = changedFiles is { Length: > 0 } ? changedFiles : await GitChangedFilesAsync(solutionDir, gitBase, cancellationToken);
         logger.LogDebug("dotnet_test_affected: resolved {Count} changed files in {Ms} ms", files.Length, sw.ElapsedMilliseconds);
         var solution = solutions.CurrentSolution;
-        // A .txt/.png inside a project folder can be test data (TestData/expected.txt), so only files outside every
-        // project are dropped as documentation. ponytail: a README.md inside a project now triggers its project fallback.
         var changed = files.Select(f => Path.GetFullPath(Path.Combine(solutionDir, f)))
-            .Where(f => !DocumentationExtensions.Contains(Path.GetExtension(f)) || AffectedTestFinder.OwningProjects(solution, f).Count > 0).ToArray();
+            .Where(f => !IsIgnoredDocumentation(solution, solutionDir, f)).ToArray();
         // Never traced at any layer (not a document, not a project-owned file, not build-wide): noted, not analyzed.
         var dllChanged = changed.Where(f => f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)).ToArray();
         // The walk traces only C# the solution compiles. Anything else (a .csproj, .razor, appsettings.json, a deleted file)
@@ -198,7 +196,7 @@ public static class TestingTools
             var unrestoredCount = AffectedTestFinder.CountUnrestoredTestProjects(solution, assetsCache);
             if (unrestoredCount > 0)
             {
-                note = $"{note} {unrestoredCount} test project(s) have no obj/project.assets.json (not restored), so package references for them are unknown.";
+                note = $"{note} {unrestoredCount} test project(s) have no readable obj/project.assets.json (not restored or unreadable), so package references for them are unknown.";
             }
         }
         if (dllChanged.Length > 0)
@@ -260,8 +258,23 @@ public static class TestingTools
         return new { Success = summary.Success, ChangedFiles = files, UntracedFiles = untraced, SelectionComplete = selection.Complete, selection.SymbolsSearched, selection.TotalTestMethods, Note = note, RanWholeSolution = ranWholeSolution, RanScope = ScopeName(scope), TestProjectsRun = testProjectsRun.Select(Path.GetFileName), AffectedTests = list, Ran = true, Run = Shape(summary) };
     }
 
-    /// <summary>Outside every project folder, changes to these can't break a test. ponytail: extension list, not content sniffing.</summary>
+    /// <summary>Documentation extensions; see <see cref="IsIgnoredDocumentation"/>. ponytail: extension list, not content sniffing.</summary>
     private static readonly HashSet<string> DocumentationExtensions = new(StringComparer.OrdinalIgnoreCase) { ".md", ".txt", ".png", ".jpg", ".jpeg", ".gif", ".svg" };
+
+    /// <summary>
+    /// A changed file that can't break a test: .md anywhere, or another documentation extension outside every project
+    /// folder. A .txt/.png inside a project can be test data (TestData/expected.txt, Verify's *.verified.txt), so it
+    /// counts. A project at the solution root would "own" every file (docs/, README.md), so its ownership doesn't count.
+    /// </summary>
+    private static bool IsIgnoredDocumentation(Solution solution, string solutionDir, string path)
+    {
+        var ext = Path.GetExtension(path);
+        if (!DocumentationExtensions.Contains(ext)) return false;
+        if (ext.Equals(".md", StringComparison.OrdinalIgnoreCase)) return true;
+        var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(solutionDir));
+        return !AffectedTestFinder.OwningProjects(solution, path).Select(solution.GetProject).OfType<Project>()
+            .Any(p => p.FilePath is { } fp && !string.Equals(Path.GetDirectoryName(Path.GetFullPath(fp)), root, StringComparison.OrdinalIgnoreCase));
+    }
 
     /// <summary>Files outside any project folder that still feed every build.</summary>
     private static bool IsBuildWideFile(string path)

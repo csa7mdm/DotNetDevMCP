@@ -294,7 +294,8 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
 
     /// <summary>Result of <see cref="FindTestProjectsForPackageChange"/>: either the runnable test projects reachable
     /// from the change, or - when UnrestoredProjectPath is set - a signal that narrowing isn't safe because that
-    /// project's restore state is unknown (TestProjects is then always empty).</summary>
+    /// project's restore state is unknown (TestProjects is then always empty). UsingProjects: the projects whose assets
+    /// reference a changed package (null when narrowing stopped early or nothing matched), for the caller's note.</summary>
     public sealed record PackageChangeImpact(IReadOnlyList<string> TestProjects, string? UnrestoredProjectPath, IReadOnlyList<string>? UsingProjects = null);
 
     /// <summary>
@@ -308,7 +309,7 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
     /// to <see cref="IsRunnableTestProject"/> (not just <see cref="IsTestProject"/>) so a helper library with no test
     /// method (referencing xUnit but declaring none, like Polly.TestUtils) is never selected to run.
     /// UnrestoredProjectPath is set - and TestProjects then empty - the moment ANY solution project (test or not) has
-    /// no obj/project.assets.json at all: without every project's assets, "this project doesn't use the changed
+    /// no readable obj/project.assets.json: without every project's assets, "this project doesn't use the changed
     /// package" can't be told apart from "restore state unknown", so the caller should not narrow.
     /// </summary>
     public static PackageChangeImpact FindTestProjectsForPackageChange(Solution solution, IReadOnlySet<string> packageIds, AssetsCache assetsCache)
@@ -349,8 +350,8 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
     }
 
     /// <summary>
-    /// Test projects (dedupe by file path across TFM variants) with no obj/project.assets.json at all - i.e. never
-    /// restored - for whom <see cref="AddPackageEdges"/> cannot see any package reference. Surfaced in the
+    /// Test projects (dedupe by file path across TFM variants) with no readable obj/project.assets.json - never
+    /// restored, or unreadable / not shaped like an assets file - for whom <see cref="AddPackageEdges"/> cannot see any package reference. Surfaced in the
     /// affected-test note so a package-mediated edge that was missed reads as "not restored", not as "this project
     /// doesn't depend on the change".
     /// </summary>
@@ -362,9 +363,9 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
     }
 
     /// <summary>
-    /// Per-call cache of a project's project.assets.json, keyed by project file path: null means the file doesn't
-    /// exist (the project has never been restored); otherwise the package ids <see cref="ReadAssetsPackageIds"/>
-    /// found (possibly empty, for a restored project with no "type":"package" entries or a malformed file). Shared
+    /// Per-call cache of a project's project.assets.json, keyed by project file path: null means unknown (the file is
+    /// missing, unreadable, or not shaped like an assets file); otherwise the package ids <see cref="ReadAssetsPackageIds"/>
+    /// found (possibly empty, for a restored project with no "type":"package" entries). Shared
     /// across <see cref="FindAffectedTestProjects"/>, <see cref="FindTestProjectsForPackageChange"/> and
     /// <see cref="CountUnrestoredTestProjects"/> within one `dotnet_test_affected` call so each project's assets file
     /// is read and parsed at most once, even though all three ask about the same projects.
@@ -438,10 +439,9 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
     /// Package ids referenced anywhere in a project.assets.json's "targets" section - every TFM key, since one
     /// assets file already covers every TFM of a multi-targeted project: "targets" -&gt; &lt;tfm&gt; -&gt;
     /// "&lt;id&gt;/&lt;version&gt;" entries whose "type" is "package" (as opposed to "project", a ProjectReference
-    /// restored into the same graph, which is already covered separately). Empty - never throwing - when the file is
-    /// missing, unreadable, or the JSON is malformed OR simply not shaped like an assets file ("targets" absent, not
-    /// an object, or a TFM entry that isn't an object): a corrupted, permission-denied, or unexpected-shape lock file
-    /// just means this edge source contributes nothing, not a hard failure for the whole affected-test walk. Every
+    /// restored into the same graph, which is already covered separately). Null - never throwing - when the file is
+    /// missing, unreadable, or the JSON is malformed OR not shaped like an assets file ("targets" absent, not an object,
+    /// or a TFM entry that isn't an object): unknown, which callers treat like "not restored" rather than "uses no packages". Every
     /// JsonElement access is guarded by a ValueKind check first, since JsonElement's Get/TryGetProperty and
     /// EnumerateObject throw InvalidOperationException on the wrong kind rather than returning false.
     /// </summary>

@@ -226,6 +226,23 @@ public sealed class RunAffectedCpmReviewFixTests : IDisposable
         Assert.Equal("solution", Prop<string>(both, "RanScope"));
     }
 
+    [Theory]
+    [InlineData("README.md")]                 // outside every project
+    [InlineData("Other.Tests/README.md")]     // .md is never test data, even inside a project
+    [InlineData("docs/diagram.png")]          // owned only by the root-level project below
+    public async Task Round3_documentation_changes_run_nothing(string relativePath)
+    {
+        var repo = BuildRepo();
+        // A project at the solution root "owns" every file by folder; its ownership must not turn docs into code changes.
+        var rootId = ProjectId.CreateNewId();
+        var solution = repo.Solution.AddProject(ProjectInfo.Create(rootId, VersionStamp.Default, "Root", "Root", LanguageNames.CSharp,
+            filePath: Path.Combine(_root, "Root.csproj")));
+
+        var result = await CallRunAffected(solution, [Path.Combine(_root, relativePath)]);
+
+        Assert.Equal("No changed code or project files.", Prop<string>(result, "Message"));
+    }
+
     private static T? Prop<T>(object obj, string name)
     {
         var value = obj.GetType().GetProperty(name)?.GetValue(obj) ?? throw new InvalidOperationException($"No property '{name}' on {obj.GetType()}");
