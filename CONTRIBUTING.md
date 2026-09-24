@@ -97,10 +97,8 @@ public class FeatureTests
 **Required documentation updates:**
 
 1. **Code Comments**: XML docs for public APIs
-2. **AI Context**: Update `docs/ai-context/project-context.json`
-3. **Architecture**: Update relevant docs in `docs/architecture/`
-4. **ADRs**: Create ADR for significant architectural decisions
-5. **README**: Update if adding major features
+2. **ADRs**: Create an ADR in `docs/architecture/adr/` for significant architectural decisions
+3. **README and wiki**: Update if you add or change a tool, a parameter or a behavior users can see
 
 ### 5. Test Your Changes
 
@@ -334,14 +332,6 @@ What is the change we're proposing?
 ## Consequences
 What becomes easier or more difficult?
 ```
-
-### AI-Friendly Documentation
-
-Update `docs/ai-context/project-context.json` when:
-- Adding new features or layers
-- Making architectural changes
-- Changing design decisions
-- Updating dependencies
 
 ## Pull Request Process
 

@@ -96,6 +96,52 @@ public class AffectedTestFinderTests
     }
 
     [Fact]
+    public async Task Finds_tests_that_call_the_changed_implementation_only_through_its_interface()
+    {
+        // The test never names Impl: it calls IService.Run on an instance it gets from somewhere else (DI, a mock setup).
+        var solution = BuildSolution(
+            lib: new()
+            {
+                ["IService.cs"] = "namespace Lib; public interface IService { int Run(); }",
+                ["Impl.cs"] = "namespace Lib; public class Impl : IService { public int Run() => 1; }",
+                ["Base.cs"] = "namespace Lib; public abstract class Base { public abstract int Go(); }",
+                ["Derived.cs"] = "namespace Lib; public class Derived : Base { public override int Go() => 2; }",
+            },
+            tests: """
+                using Xunit;
+                namespace Lib.Tests;
+                public class LibTests
+                {
+                    private readonly Lib.IService _service = null!;
+                    private readonly Lib.Base _base = null!;
+                    [Fact] public void Through_interface() { _ = _service.Run(); }
+                    [Fact] public void Through_base_class() { _ = _base.Go(); }
+                    [Fact] public void Unrelated() { }
+                }
+                """);
+
+        var affected = await AffectedTestFinder.FindAsync(solution, [Path.Combine(Root, "src", "Impl.cs"), Path.Combine(Root, "src", "Derived.cs")],
+            maxDepth: 3, AffectedTestFinder.DefaultBudget, NullLogger.Instance, default);
+
+        Assert.Equal(
+            ["Lib.Tests.LibTests.Through_base_class", "Lib.Tests.LibTests.Through_interface"],
+            affected.Tests.Select(t => t.FullyQualifiedName).Order());
+    }
+
+    [Fact]
+    public void Project_fallback_maps_a_file_the_solution_does_not_compile_to_the_project_folder_holding_it()
+    {
+        var solution = BuildSolution(lib: new() { ["A.cs"] = "namespace Lib; public class A { }" },
+            tests: "using Xunit; namespace Lib.Tests; public class LibTests { [Fact] public void T() { } }");
+
+        // appsettings.json, a .razor file, the .csproj itself, or a deleted .cs file: none is a document the walk can trace.
+        var affected = AffectedTestFinder.FindAffectedTestProjects(solution, [Path.Combine(Root, "src", "appsettings.json")]);
+
+        Assert.Equal([Path.Combine(Root, "test", "Lib.Tests.csproj")], affected);
+        Assert.Empty(AffectedTestFinder.OwningProjects(solution, Path.Combine(Root, "Directory.Build.props")));
+    }
+
+    [Fact]
     public void Project_fallback_finds_only_the_test_project_that_references_the_changed_library()
     {
         var solution = BuildTwoLibrarySolution(out var libATests, out _);
