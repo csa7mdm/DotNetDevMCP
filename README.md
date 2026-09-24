@@ -151,30 +151,53 @@ trust, run the agent and the server in a container with no credentials. Don't ex
 
 ### Run it in a container
 
-No registry image exists yet; build it locally straight from GitHub:
+No registry image exists yet; build it locally straight from GitHub, pinned to a release tag:
 
 ```bash
-docker build -t dotnetdevmcp https://github.com/csa7mdm/DotNetDevMCP.git
+docker build -t dotnetdevmcp https://github.com/csa7mdm/DotNetDevMCP.git#v0.3.3
 ```
 
-Restore first (needs network, so use the default bridge network for this step only):
+Restore first (needs network, so use the same sandbox flags minus `--network none`, i.e. the default bridge network, for this one step):
 
 ```bash
-docker run --rm --network bridge \
-  -v "$PWD:/src" -v dotnetdevmcp-nuget:/home/mcp/.nuget/packages \
+docker run --rm \
+  -v "${PWD}:/src" -v dotnetdevmcp-nuget:/home/mcp/.nuget/packages \
+  --memory 8g --memory-swap 8g --pids-limit 512 --cap-drop ALL --security-opt no-new-privileges \
   --entrypoint dotnet \
   dotnetdevmcp restore /src/YourSolution.sln
 ```
 
-Then register the sandboxed server:
+Then register the sandboxed server, mounting the now-populated package cache read-only:
 
 ```bash
-claude mcp add dotnetdevmcp -- docker run -i --rm --network none -v "$PWD:/src" -v dotnetdevmcp-nuget:/home/mcp/.nuget/packages --memory 8g --pids-limit 512 --cap-drop ALL --security-opt no-new-privileges dotnetdevmcp --load-solution /src/YourSolution.sln
+claude mcp add dotnetdevmcp -- docker run -i --rm --network none -v "${PWD}:/src" -v dotnetdevmcp-nuget:/home/mcp/.nuget/packages:ro --memory 8g --memory-swap 8g --pids-limit 512 --cap-drop ALL --security-opt no-new-privileges dotnetdevmcp --load-solution /src/YourSolution.sln
 ```
+
+`--memory-swap` must match `--memory` (not be left unset): Docker defaults unset `--memory-swap` to twice `--memory`, so without it a "memory-capped" container can still swap its way to using twice the memory you thought you capped it to.
+
+This is the Docker Desktop (Windows/macOS) form: it relies on the image's built-in `mcp` user (uid 10001) owning the mounted NuGet cache volume. **On native Linux**, the checked-out repository on the host is owned by your own uid, not remapped by a VM the way Docker Desktop does it, so uid 10001 can't write `obj/`/`bin/` under `/src` there. Use this form instead, matching the container to your own uid/gid and pointing the package cache at a uid-agnostic path baked into the image:
+
+```bash
+docker run -i --rm --network none \
+  --user "$(id -u):$(id -g)" -e HOME=/tmp -e NUGET_PACKAGES=/nuget \
+  -v "${PWD}:/src" -v dotnetdevmcp-nuget:/nuget:ro \
+  --memory 8g --memory-swap 8g --pids-limit 512 --cap-drop ALL --security-opt no-new-privileges \
+  dotnetdevmcp --load-solution /src/YourSolution.sln
+```
+
+(restore the same way, minus `--network none` and the `:ro` on the volume). CI (`sandbox` job in `.github/workflows/build.yml`, which runs on a native Linux GitHub-hosted runner) uses exactly this form.
 
 On Linux hosts you can additionally run the container under [gVisor](https://gvisor.dev/) (`--runtime=runsc`) for a second, kernel-level layer of syscall isolation; measure the overhead for your workload before adopting it, since gVisor's userspace kernel adds latency to file and process operations that `dotnet build`/`test` do a lot of.
 
-**What this does not protect against:** the repository directory is mounted read-write by design (the point of the server is to build, test and edit it), so anything with access to that mount can still modify your source. And the restore step needs real network access, which is a real, if narrow, window: run it once against a solution you already trust, then switch to `--network none` for actual use. See [SECURITY.md](https://github.com/csa7mdm/DotNetDevMCP/blob/main/SECURITY.md#run-it-in-a-container) for the full breakdown, including what the sandbox flags each block.
+**What this does not protect against:**
+
+- **The mounted repository is writable by design.** Building, testing and applying Roslyn edits to it is the point, so anything reaching that mount can still modify your source.
+- **Only the MCP server is contained, not the agent or the `docker` CLI launching it.** The MCP client (e.g. Claude Code) that runs `docker run` still needs access to the Docker daemon, which is root-equivalent on Linux (anyone in the `docker` group can mount `/` and read/write as root). Containing the server doesn't contain the thing starting it.
+- **The restore step needs real network access**, and it runs the target solution's own MSBuild/NuGet logic (`.csproj`, `nuget.config`, package install scripts) while it has that access. Run it with every sandbox flag except `--network none` (as shown above) rather than wide open, and only against a solution/feed you already trust; then switch to `--network none` for the actual `--load-solution` run, which needs no network for anything the server itself does.
+- **The shared package cache volume is writable during restore.** Restoring one untrusted repo against `dotnetdevmcp-nuget` can plant a malicious build-time file (a `.targets`/`.props` a package ships) that then runs during some *other* repo's build sharing that same cache. For untrusted code, use a separate cache volume per repo instead of one shared one.
+- **Docker Desktop's isolation boundary is the VM kernel shared by every container in it, not the host kernel.** On Windows/macOS all your containers share one Linux VM; a kernel-level escape there reaches every other container in that VM, not just this one.
+
+See [SECURITY.md](https://github.com/csa7mdm/DotNetDevMCP/blob/main/SECURITY.md#run-it-in-a-container) for the full breakdown, including what each sandbox flag blocks and the git-mode caveat for worktrees/submodules.
 
 ## Help, feedback and contributing
 
