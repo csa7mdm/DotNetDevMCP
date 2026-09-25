@@ -89,3 +89,95 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: TestResults/**/*.trx
           retention-days: 7
+
+  sandbox:
+    name: container sandbox containment
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build image
+        run: docker build -t dotnetdevmcp:ci .
+
+      - name: Smoke test (container --help)
+        run: docker run --rm dotnetdevmcp:ci --help
+
+      - name: Smoke test (stdio handshake + tools/list)
+        shell: bash
+        run: |
+          count_tools() {
+            grep '"id":2' "$1" | grep -o '"name":"' | wc -l
+          }
+
+          { printf '%s\n' \
+              '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+              '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+              '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'; sleep 5; } \
+            | docker run -i --rm dotnetdevmcp:ci --log-level Warning 2>/dev/null > smoke-container.out || true
+          count=$(count_tools smoke-container.out)
+          echo "tools listed (container, default): $count"
+          test "$count" -eq 37
+
+      # Native-Linux form (see README/SECURITY.md "Run it in a container"):
+      # `--user "$(id -u):$(id -g)"` matches the container to the runner's own
+      # uid, since ubuntu-latest is a real Linux host where the checked-out
+      # repo is owned by that uid, not remapped the way Docker Desktop's VM
+      # does it. This proves that documented path actually works, rather than
+      # papering over the uid 10001 vs. runner-uid mismatch with a chmod.
+      - name: Restore Sandbox.Fixtures (network needed)
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp \
+            -e NUGET_PACKAGES=/nuget \
+            -v "$PWD/tests/Sandbox.Fixtures:/src" \
+            -v nuget:/nuget \
+            --entrypoint dotnet \
+            dotnetdevmcp:ci restore /src
+
+      - name: Run sandbox containment tests (with sandbox flags)
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp \
+            -e NUGET_PACKAGES=/nuget \
+            --network none \
+            --memory 8g \
+            --memory-swap 8g \
+            --pids-limit 512 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges \
+            -v "$PWD/tests/Sandbox.Fixtures:/src" \
+            -v nuget:/nuget:ro \
+            --entrypoint dotnet \
+            dotnetdevmcp:ci test /src --no-restore -- RunConfiguration.TreatNoTestsAsError=true
+
+      # Negative control: the same run, minus every sandbox flag. The fixtures
+      # assert things the flags themselves cause (empty capability bounding
+      # set, no swap, the pids cap, no network interface but loopback, only
+      # /src and the package cache mounted); without the flags those
+      # assertions should fail, which is what proves they were testing the
+      # flags and not trivially passing regardless of environment.
+      - name: Run sandbox containment tests (without sandbox flags - must fail)
+        run: |
+          set +e
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp \
+            -e NUGET_PACKAGES=/nuget \
+            -v "$PWD/tests/Sandbox.Fixtures:/src" \
+            -v nuget:/nuget \
+            --entrypoint dotnet \
+            dotnetdevmcp:ci test /src --no-restore -- RunConfiguration.TreatNoTestsAsError=true > negative.log 2>&1
+          code=$?
+          set -e
+          cat negative.log
+          # Any failure isn't enough (a build error or a bad mount also fails): exactly these six must fail, one per flag.
+          [ "$code" -ne 0 ] || { echo "controls did not discriminate: tests passed without the sandbox flags"; exit 1; }
+          grep -Eq 'Total: +7' negative.log || { echo "expected 7 tests to run"; exit 1; }
+          grep -Eq 'Failed: +6,' negative.log || { echo "expected exactly 6 failures"; exit 1; }
+          for t in CapabilityBoundingSetIsEmpty NoNewPrivsIsSet MemoryIsCappedAt8GiBWithNoSwap PidsAreCappedAt512 \
+                   OnlyLoopbackInterfaceExists WorkspaceWritableButServerAndPackageCacheAreNot; do
+            grep -q "Failed Sandbox.Fixtures.SandboxControlTests.$t" negative.log || { echo "$t did not fail without its flag"; exit 1; }
+          done

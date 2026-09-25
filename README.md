@@ -146,8 +146,35 @@ DotNetDevMCP runs as you, for an agent you trust with your code. `dotnet build` 
 contains, so a malicious test or `.csproj` runs with your privileges, exactly as it would in your terminal; the server adds no
 sandbox. What it does guarantee: tool arguments can't smuggle extra options into `dotnet` or `git`, Roslyn edits stay inside the
 solution directory, and `--clean-env` keeps secrets in environment variables away from child processes. For code you don't
-trust, run the agent and the server in a container with no credentials. Don't expose `--http` beyond localhost. Details:
+trust, run the agent and the server together in a container or VM with no credentials; the image below contains only the
+server, which already keeps builds and tests off your machine. Don't expose `--http` beyond localhost. Details:
 [SECURITY.md](https://github.com/csa7mdm/DotNetDevMCP/blob/main/SECURITY.md#security-model).
+
+### Run it in a container
+
+The server can run in a container with no network, capped memory and processes, no capabilities, and only your repository
+mounted, so builds and tests the agent triggers can't reach the rest of your machine. Build the image (v0.3.4 is the first
+release with a Dockerfile), restore once with network, then register the sandboxed server:
+
+```bash
+docker build -t dotnetdevmcp https://github.com/csa7mdm/DotNetDevMCP.git#v0.3.4
+```
+```bash
+docker run --rm -v "${PWD}:/src" -v dotnetdevmcp-nuget:/home/mcp/.nuget/packages --memory 8g --memory-swap 8g --pids-limit 512 --cap-drop ALL --security-opt no-new-privileges --entrypoint dotnet dotnetdevmcp restore /src/YourSolution.sln
+```
+```bash
+claude mcp add dotnetdevmcp -- docker run -i --rm --network none -v "${PWD}:/src" -v dotnetdevmcp-nuget:/home/mcp/.nuget/packages:ro --memory 8g --memory-swap 8g --pids-limit 512 --cap-drop ALL --security-opt no-new-privileges dotnetdevmcp --load-solution /src/YourSolution.sln
+```
+
+This is the Docker Desktop form (Windows, macOS): run it from PowerShell, WSL or macOS, or prefix each command with
+`MSYS_NO_PATHCONV=1` in Git Bash. Native Linux needs a `--user` variant, and Windows repos with `core.autocrlf` need one extra
+setting for git mode; both are in [SECURITY.md](https://github.com/csa7mdm/DotNetDevMCP/blob/main/SECURITY.md#run-it-in-a-container),
+along with what each flag blocks and the tests that prove it.
+
+It doesn't protect everything: the mounted repository is writable by design; only the server is contained, not the agent or
+the `docker` CLI (which needs root-equivalent daemon access on Linux); restore runs the solution's own build logic with
+network access; a shared package cache can carry a planted build file from one repo to another (use one volume per untrusted
+repo); and Docker Desktop's boundary is a VM kernel shared by all your containers.
 
 ## Help, feedback and contributing
 

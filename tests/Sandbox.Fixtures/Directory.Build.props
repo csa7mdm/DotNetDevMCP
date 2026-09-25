@@ -1,0 +1,23 @@
+<Project>
+  <!--
+    This file exists so tests/Sandbox.Fixtures does NOT inherit the repo root's
+    Directory.Build.props: MSBuild resolves the nearest Directory.Build.props by
+    walking up from the project directory and stops at the first one it finds, so
+    having our own here fully replaces (not merges with) the root one.
+
+    Sandbox.Fixtures is intentionally excluded from DotNetDevMCP.sln and from
+    central package management (see Directory.Packages.props next to this file):
+    it is built and run only inside the container under test, with its own pinned
+    package versions, so it should not pick up unrelated solution-wide settings
+    (analyzers, warnings-as-errors, package pruning, etc.) that assume it is part
+    of the main build.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>13.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>

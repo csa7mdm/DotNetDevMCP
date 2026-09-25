@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+.git/
+benchmarks/polly/results/
+tests/Sandbox.Fixtures/
+.vs/
+*.user
+.claude/
+TestResults/
+artifacts/
+*.nupkg
+.env*
+**/__pycache__/

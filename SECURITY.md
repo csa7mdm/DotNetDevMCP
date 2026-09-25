@@ -81,6 +81,133 @@ For repositories you don't trust (a pull request from a stranger, a downloaded s
 container or VM with only that repository mounted, no credentials, and restricted network. The server cannot provide that
 isolation itself.
 
+### Run it in a container
+
+A `Dockerfile` at the repo root builds DotNetDevMCP into an image that runs as a non-root user (uid 10001) with the .NET SDK
+available (the server shells out to `dotnet build`/`test`, so it needs the full SDK, not just the runtime, at container
+runtime). No registry image is published yet, so build it locally, pinned to a release tag (v0.3.4 is the first release
+that contains the Dockerfile):
+
+```bash
+docker build -t dotnetdevmcp https://github.com/csa7mdm/DotNetDevMCP.git#v0.3.4
+```
+
+The commands below are for bash (macOS, Linux, WSL). On Windows, use PowerShell and put each command on one line (bash's
+`\` line continuations don't work there); `"${PWD}:/src"` works in both. In Git Bash on Windows, prefix each command with
+`MSYS_NO_PATHCONV=1`, or Git Bash rewrites `/src` into a Windows path and the mount goes to the wrong place.
+
+Restore needs network access, so do it once, separately, with every other sandbox flag still on, before locking the network
+down too:
+
+```bash
+docker run --rm \
+  -v "${PWD}:/src" -v dotnetdevmcp-nuget:/home/mcp/.nuget/packages \
+  --memory 8g --memory-swap 8g --pids-limit 512 --cap-drop ALL --security-opt no-new-privileges \
+  --entrypoint dotnet \
+  dotnetdevmcp restore /src/YourSolution.sln
+```
+
+Then run the server itself with network disabled too, and the package cache mounted read-only:
+
+```bash
+claude mcp add dotnetdevmcp -- docker run -i --rm --network none -v "${PWD}:/src" -v dotnetdevmcp-nuget:/home/mcp/.nuget/packages:ro --memory 8g --memory-swap 8g --pids-limit 512 --cap-drop ALL --security-opt no-new-privileges dotnetdevmcp --load-solution /src/YourSolution.sln
+```
+
+**On native Linux** (unlike Docker Desktop on Windows/macOS, which runs everything inside its own VM and remaps ownership),
+the checked-out repository on the host is owned by your own uid, and the image's built-in `mcp` user is a fixed uid 10001 -
+so `dotnet build` can't create `obj/`/`bin/` under the mounted `/src`. Match the container to your own uid/gid instead, and
+point the NuGet cache at `/nuget` (mode 1777, baked into the image specifically so any uid can use it):
+
+```bash
+docker run -i --rm --network none \
+  --user "$(id -u):$(id -g)" -e HOME=/tmp -e NUGET_PACKAGES=/nuget \
+  -v "${PWD}:/src" -v dotnetdevmcp-nuget-linux:/nuget:ro \
+  --memory 8g --memory-swap 8g --pids-limit 512 --cap-drop ALL --security-opt no-new-privileges \
+  dotnetdevmcp --load-solution /src/YourSolution.sln
+```
+
+Restore for this form, once, with network and a writable cache:
+
+```bash
+docker run --rm \
+  --user "$(id -u):$(id -g)" -e HOME=/tmp -e NUGET_PACKAGES=/nuget \
+  -v "${PWD}:/src" -v dotnetdevmcp-nuget-linux:/nuget \
+  --memory 8g --memory-swap 8g --pids-limit 512 --cap-drop ALL --security-opt no-new-privileges \
+  --entrypoint dotnet \
+  dotnetdevmcp restore /src/YourSolution.sln
+```
+
+Keep a separate cache volume per form: a volume first filled by the Docker Desktop form is owned by uid 10001 and can't
+take new packages in the `--user` form.
+
+The `sandbox` job in `.github/workflows/build.yml` runs on a native Linux GitHub-hosted runner and exercises this form: it
+restores the containment fixtures, runs them with every flag (they must pass) and without the flags (exactly the expected
+six must fail), and runs a stdio handshake against the image. It does not yet start the server with `--load-solution` in
+this form, so git mode and builds against the read-only cache were verified by hand, not in CI.
+
+What each flag buys you:
+
+| Flag | Blocks |
+|---|---|
+| `--network none` | Outbound network access from the server and anything it spawns (`dotnet build`, `dotnet test`, MSBuild tasks, source generators). |
+| `--memory 8g` together with `--memory-swap 8g` | Unbounded memory growth; the kernel OOM-kills the container's processes instead of exhausting the host. Setting only `--memory` is not enough - Docker then defaults `--memory-swap` to *twice* `--memory`, so the container can still swap its way to 16 GiB. Setting both to the same value collapses the extra swap allowance to zero. |
+| `--pids-limit 512` | Fork bombs and runaway process spawning inside the container. Note this counts *threads*, not just processes - `dotnet build`'s own thread-per-core parallelism on this repo peaked at 213 live threads on a 12-CPU runner during a full solution build, so raise this if you hit it on a larger machine or a much bigger solution, rather than treating 512 as universally safe headroom. |
+| `--cap-drop ALL` | Empties the process's capability *bounding set*, not just the effective set - so even a setuid/setgid binary that tries to re-add a capability during `execve()` can't, because a process can never regain a capability outside its bounding set. |
+| `--security-opt no-new-privileges` | Setuid/setgid binaries and similar mechanisms gaining privileges the container's own user doesn't have. The image build already strips the setuid/setgid bits from every file it ships (`chmod a-s`, re-applied on every rebuild); the flag also covers what that strip can't see, such as a setuid binary a build or test writes at run time. |
+
+On Linux hosts, you can add `--runtime=runsc` to run the container under [gVisor](https://gvisor.dev/), which intercepts
+syscalls in a userspace kernel instead of relying solely on the host kernel's namespace/cgroup isolation. This is a genuinely
+stronger boundary, but it is Linux-hosts-only (no gVisor on Docker Desktop for Windows/macOS) and adds per-syscall overhead
+that shows up directly in `dotnet build`/`test` latency; measure it against your own workload before adopting it as a default.
+
+**Git mode inside the container.** The image runs `git config --system --add safe.directory '*'` at build time, because git
+refuses to operate on a repository owned by a different uid than the process running it ("dubious ownership", a hardening
+added after CVE-2022-24765) - and `/src` is a bind mount almost never owned by whichever uid the container runs as. This is
+safe here specifically because the whole point of the container is to operate on whatever repo you mounted; it is *not* safe
+to copy onto a host git config that trusts arbitrary repos. One thing it does not fix: a git **worktree or submodule** whose
+`.git` file points at a gitdir outside `/src` (e.g. a worktree created from a bare repo that lives elsewhere on the host, or
+a submodule whose superproject isn't mounted alongside it) still fails, because that gitdir path doesn't exist inside the
+container. Only a self-contained repo (or worktree/submodule fully under the mounted directory) works in git mode.
+
+On a **Windows host with `core.autocrlf=true`** (the Git for Windows default), your working tree has CRLF line endings but
+the container's git has no autocrlf setting, so it reports every text file as modified; git mode then treats project files
+as changed and runs the whole solution. Either add a `.gitattributes` with `* text=auto` to the repository, or pass
+`-e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=core.autocrlf -e GIT_CONFIG_VALUE_0=true` to `docker run`.
+
+`tests/Sandbox.Fixtures/` contains xUnit tests (`SandboxControlTests`) that assert these boundaries directly by reading the
+kernel's own bookkeeping (`/proc/self/status`, `/sys/fs/cgroup/*`, `/proc/self/mountinfo`, `/sys/class/net`) rather than by
+attempting an attack and timing out - e.g. asserting the capability bounding set is empty, `memory.max`/`memory.swap.max`
+match the flags above, `pids.max` is 512, only the loopback network interface exists, and only `/src` and the package cache
+are mounted from the host. They are not part of `DotNetDevMCP.sln` and are meant to be run inside the container, with and
+without the sandbox flags, to prove the flags are doing something rather than being cargo-culted; running them without the
+flags is expected to fail most of these assertions. CI runs both: the flagged version (which must pass) and, as a negative
+control, the unflagged version (which must fail) in the `sandbox` job of `.github/workflows/build.yml`.
+
+**What this setup does *not* protect against:**
+
+- **The mounted repository is writable by design.** The whole point of the server is to build, test, and apply Roslyn edits
+  to your solution, so `-v "${PWD}:/src"` is read-write on purpose. Anything that can reach that mount — the agent, a malicious
+  test, a compromised MSBuild task — can still modify or delete your source. The container only contains *where else* it can
+  reach, not what it can do to the code you handed it.
+- **Only the MCP server is contained, not the agent driving it.** The MCP client (e.g. Claude Code) that runs `docker run`
+  needs access to the Docker daemon to do so, which on Linux is root-equivalent (anyone who can talk to the daemon, e.g. via
+  membership in the `docker` group, can mount `/` read-write and run as root inside a container). Sandboxing the server's own
+  container does nothing to sandbox whatever launched it.
+- **Restore needs network**, and while it has that access it runs the target solution's own MSBuild/NuGet logic - a
+  malicious `.csproj`/`nuget.config` (pointing at an attacker-controlled feed, or a package with a build-time script) can use
+  that same window to make outbound requests. Run restore with every other sandbox flag on (as shown above), only against
+  solutions/feeds you already trust, and switch to `--network none` for the actual `--load-solution` run, which needs no
+  network for anything the server itself does.
+- **The shared NuGet cache volume is writable during restore**, and NuGet packages can carry MSBuild `.targets`/`.props`
+  files that run during a build. Restoring one untrusted repository into `dotnetdevmcp-nuget` can plant such a file where a
+  *different* repo's build - sharing that same cache volume - would then execute it. If you work with untrusted code, use a
+  separate named volume per repository instead of one shared cache.
+- **A container is not a hard security boundary on every host.** Docker containers share the host kernel; on Linux without
+  gVisor (or an equivalent), a kernel exploit can still escape the container. On Docker Desktop (Windows/macOS) the shared
+  boundary is one layer further out: every container runs inside the *same* Linux VM, so a kernel-level escape there reaches
+  every other container in that VM, not just this one. Treat all of this as raising the cost of an attack (no ambient
+  network, capped resources, no ambient host filesystem access beyond the mount), not as equivalent to a VM per container.
+
 ### `--http` mode
 
 HTTP mode listens on `localhost` only. A request that carries an `Origin` header is checked against an allow-list: only
