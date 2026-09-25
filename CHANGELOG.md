@@ -3,7 +3,10 @@
 All notable changes to DotNetDevMCP are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [0.3.4] - 2026-09-25
+
+Wave 0 of the roadmap: a fix for missed tests on multi-targeted projects, NuGet package edges, `--http` hardening, a
+sandboxed container image, and a documentation site search engines can index. Each change passed an adversarial review.
 
 ### Security
 - **`--http` DNS rebinding / cross-origin protection.** Per the MCP Streamable HTTP transport's security guidance, the server
@@ -20,6 +23,13 @@ All notable changes to DotNetDevMCP are documented here. The format follows
   authentication or TLS and still shouldn't be exposed beyond localhost.
 
 ### Added
+- **Container image.** A `Dockerfile` runs the whole server in a container (non-root, no network, capped memory and
+  processes, no capabilities, read-only package cache), which also contains solution loading and restore. `tests/Sandbox.Fixtures`
+  proves each flag by reading kernel state, and CI checks both that they pass with the flags and that exactly the expected
+  six fail without them. Build it with `docker build -t dotnetdevmcp https://github.com/csa7mdm/DotNetDevMCP.git#v0.3.4`;
+  commands, limits and what it doesn't protect are in SECURITY.md.
+- **Documentation site** at https://csa7mdm.github.io/DotNetDevMCP/: the wiki pages (which search engines don't index for
+  repositories under 500 stars), the benchmark article with structured data, `llms.txt` and `llms-full.txt`.
 - `dotnet_test_affected`'s project fallback now follows NuGet package references, not just `ProjectReference`s: when a
   test project's restored `obj/project.assets.json` references another solution project's package id (a literal
   `<PackageId>`, one from the nearest `Directory.Build.props`, or the assembly name), that test project is selected

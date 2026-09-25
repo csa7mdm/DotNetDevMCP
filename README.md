@@ -220,7 +220,7 @@ Built on the official [MCP C# SDK](https://github.com/modelcontextprotocol/cshar
 
 ## Status
 
-0.3.3. The Roslyn tools are mature (they come from SharpTools). Testing, build, git and orchestration are newer and have been exercised on this repository and a few others; expect rough edges on unusual project layouts. Issues and PRs welcome, see [CONTRIBUTING](https://github.com/csa7mdm/DotNetDevMCP/blob/main/CONTRIBUTING.md).
+0.3.4. The Roslyn tools are mature (they come from SharpTools). Testing, build, git and orchestration are newer and have been exercised on this repository and a few others; expect rough edges on unusual project layouts. Issues and PRs welcome, see [CONTRIBUTING](https://github.com/csa7mdm/DotNetDevMCP/blob/main/CONTRIBUTING.md).
 
 Known gaps: `dotnet_test_affected` follows C# references only (no reflection, no DI-by-convention, no string-keyed lookups), so a change reached only through those paths will not select the test; use `dryRun` to check what it picks. Calls through an interface or base class are followed. The project fallback follows `ProjectReference`s and NuGet package references: package references are now followed when the test project has been restored; cross-repo consumers are not. Builds and tests are not sandboxed (see Security). Tests that hang instead of failing are only caught by a run that finishes. Test attribute detection covers xUnit, NUnit and MSTest by attribute name. Past the command-line length limit the filter widens from methods to classes, then to the whole project (more tests, never fewer).
 
