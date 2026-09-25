@@ -85,11 +85,16 @@ isolation itself.
 
 A `Dockerfile` at the repo root builds DotNetDevMCP into an image that runs as a non-root user (uid 10001) with the .NET SDK
 available (the server shells out to `dotnet build`/`test`, so it needs the full SDK, not just the runtime, at container
-runtime). No registry image is published yet, so build it locally, pinned to a release tag:
+runtime). No registry image is published yet, so build it locally, pinned to a release tag (v0.3.4 is the first release
+that contains the Dockerfile):
 
 ```bash
-docker build -t dotnetdevmcp https://github.com/csa7mdm/DotNetDevMCP.git#v0.3.3
+docker build -t dotnetdevmcp https://github.com/csa7mdm/DotNetDevMCP.git#v0.3.4
 ```
+
+The commands below are for bash (macOS, Linux, WSL). On Windows, use PowerShell and put each command on one line (bash's
+`\` line continuations don't work there); `"${PWD}:/src"` works in both. In Git Bash on Windows, prefix each command with
+`MSYS_NO_PATHCONV=1`, or Git Bash rewrites `/src` into a Windows path and the mount goes to the wrong place.
 
 Restore needs network access, so do it once, separately, with every other sandbox flag still on, before locking the network
 down too:
@@ -116,13 +121,29 @@ point the NuGet cache at `/nuget` (mode 1777, baked into the image specifically 
 ```bash
 docker run -i --rm --network none \
   --user "$(id -u):$(id -g)" -e HOME=/tmp -e NUGET_PACKAGES=/nuget \
-  -v "${PWD}:/src" -v dotnetdevmcp-nuget:/nuget:ro \
+  -v "${PWD}:/src" -v dotnetdevmcp-nuget-linux:/nuget:ro \
   --memory 8g --memory-swap 8g --pids-limit 512 --cap-drop ALL --security-opt no-new-privileges \
   dotnetdevmcp --load-solution /src/YourSolution.sln
 ```
 
-(restore the same way, minus `--network none` and the `:ro`). The `sandbox` job in `.github/workflows/build.yml` runs on a
-native Linux GitHub-hosted runner and uses exactly this form, so it is verified in CI rather than only documented.
+Restore for this form, once, with network and a writable cache:
+
+```bash
+docker run --rm \
+  --user "$(id -u):$(id -g)" -e HOME=/tmp -e NUGET_PACKAGES=/nuget \
+  -v "${PWD}:/src" -v dotnetdevmcp-nuget-linux:/nuget \
+  --memory 8g --memory-swap 8g --pids-limit 512 --cap-drop ALL --security-opt no-new-privileges \
+  --entrypoint dotnet \
+  dotnetdevmcp restore /src/YourSolution.sln
+```
+
+Keep a separate cache volume per form: a volume first filled by the Docker Desktop form is owned by uid 10001 and can't
+take new packages in the `--user` form.
+
+The `sandbox` job in `.github/workflows/build.yml` runs on a native Linux GitHub-hosted runner and exercises this form: it
+restores the containment fixtures, runs them with every flag (they must pass) and without the flags (exactly the expected
+six must fail), and runs a stdio handshake against the image. It does not yet start the server with `--load-solution` in
+this form, so git mode and builds against the read-only cache were verified by hand, not in CI.
 
 What each flag buys you:
 
@@ -132,7 +153,7 @@ What each flag buys you:
 | `--memory 8g` together with `--memory-swap 8g` | Unbounded memory growth; the kernel OOM-kills the container's processes instead of exhausting the host. Setting only `--memory` is not enough - Docker then defaults `--memory-swap` to *twice* `--memory`, so the container can still swap its way to 16 GiB. Setting both to the same value collapses the extra swap allowance to zero. |
 | `--pids-limit 512` | Fork bombs and runaway process spawning inside the container. Note this counts *threads*, not just processes - `dotnet build`'s own thread-per-core parallelism on this repo peaked at 213 live threads on a 12-CPU runner during a full solution build, so raise this if you hit it on a larger machine or a much bigger solution, rather than treating 512 as universally safe headroom. |
 | `--cap-drop ALL` | Empties the process's capability *bounding set*, not just the effective set - so even a setuid/setgid binary that tries to re-add a capability during `execve()` can't, because a process can never regain a capability outside its bounding set. |
-| `--security-opt no-new-privileges` | Setuid/setgid binaries and similar mechanisms gaining privileges the container's own user doesn't have. The image's build also proactively strips the setuid/setgid bits from every file it ships (`chmod a-s`), so there's nothing left to try to use even without this flag - the flag is defense in depth against anything a future base-image update reintroduces. |
+| `--security-opt no-new-privileges` | Setuid/setgid binaries and similar mechanisms gaining privileges the container's own user doesn't have. The image build already strips the setuid/setgid bits from every file it ships (`chmod a-s`, re-applied on every rebuild); the flag also covers what that strip can't see, such as a setuid binary a build or test writes at run time. |
 
 On Linux hosts, you can add `--runtime=runsc` to run the container under [gVisor](https://gvisor.dev/), which intercepts
 syscalls in a userspace kernel instead of relying solely on the host kernel's namespace/cgroup isolation. This is a genuinely
@@ -147,6 +168,11 @@ to copy onto a host git config that trusts arbitrary repos. One thing it does no
 `.git` file points at a gitdir outside `/src` (e.g. a worktree created from a bare repo that lives elsewhere on the host, or
 a submodule whose superproject isn't mounted alongside it) still fails, because that gitdir path doesn't exist inside the
 container. Only a self-contained repo (or worktree/submodule fully under the mounted directory) works in git mode.
+
+On a **Windows host with `core.autocrlf=true`** (the Git for Windows default), your working tree has CRLF line endings but
+the container's git has no autocrlf setting, so it reports every text file as modified; git mode then treats project files
+as changed and runs the whole solution. Either add a `.gitattributes` with `* text=auto` to the repository, or pass
+`-e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=core.autocrlf -e GIT_CONFIG_VALUE_0=true` to `docker run`.
 
 `tests/Sandbox.Fixtures/` contains xUnit tests (`SandboxControlTests`) that assert these boundaries directly by reading the
 kernel's own bookkeeping (`/proc/self/status`, `/sys/fs/cgroup/*`, `/proc/self/mountinfo`, `/sys/class/net`) rather than by

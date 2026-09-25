@@ -26,6 +26,10 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 3
+    ignore:
+      # The server targets net10.0: an SDK major bump (e.g. 11.0) has no 10.0 runtime. Move majors by hand.
+      - dependency-name: "mcr.microsoft.com/dotnet/sdk"
+        update-types: ["version-update:semver-major"]
     labels:
       - "dependencies"
       - "docker"

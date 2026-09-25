@@ -161,15 +161,23 @@ jobs:
       # flags and not trivially passing regardless of environment.
       - name: Run sandbox containment tests (without sandbox flags - must fail)
         run: |
-          if docker run --rm \
+          set +e
+          docker run --rm \
             --user "$(id -u):$(id -g)" \
             -e HOME=/tmp \
             -e NUGET_PACKAGES=/nuget \
             -v "$PWD/tests/Sandbox.Fixtures:/src" \
             -v nuget:/nuget \
             --entrypoint dotnet \
-            dotnetdevmcp:ci test /src --no-restore -- RunConfiguration.TreatNoTestsAsError=true;
-          then
-            echo "controls did not discriminate: sandbox tests passed even without the sandbox flags"
-            exit 1
-          fi
+            dotnetdevmcp:ci test /src --no-restore -- RunConfiguration.TreatNoTestsAsError=true > negative.log 2>&1
+          code=$?
+          set -e
+          cat negative.log
+          # Any failure isn't enough (a build error or a bad mount also fails): exactly these six must fail, one per flag.
+          [ "$code" -ne 0 ] || { echo "controls did not discriminate: tests passed without the sandbox flags"; exit 1; }
+          grep -Eq 'Total: +7' negative.log || { echo "expected 7 tests to run"; exit 1; }
+          grep -Eq 'Failed: +6,' negative.log || { echo "expected exactly 6 failures"; exit 1; }
+          for t in CapabilityBoundingSetIsEmpty NoNewPrivsIsSet MemoryIsCappedAt8GiBWithNoSwap PidsAreCappedAt512 \
+                   OnlyLoopbackInterfaceExists WorkspaceWritableButServerAndPackageCacheAreNot; do
+            grep -q "Failed Sandbox.Fixtures.SandboxControlTests.$t" negative.log || { echo "$t did not fail without its flag"; exit 1; }
+          done
