@@ -19,6 +19,28 @@ All notable changes to DotNetDevMCP are documented here. The format follows
   that forwards the original `Origin`, or a non-browser client that happens to set one. `--http` still has no
   authentication or TLS and still shouldn't be exposed beyond localhost.
 
+### Added
+- `dotnet_test_affected`'s project fallback now follows NuGet package references, not just `ProjectReference`s: when a
+  test project's restored `obj/project.assets.json` references another solution project's package id (a literal
+  `<PackageId>`, one from the nearest `Directory.Build.props`, or the assembly name), that test project is selected
+  even with no `ProjectReference` between them. A change to `Directory.Packages.props` is narrowed, via the same
+  assets data, to the test projects that use the package ids whose version actually moved (diffed against git) -
+  walking from EVERY solution project whose restored assets reference a changed id, not just test projects', so a
+  `PrivateAssets="all"` package (an analyzer or source generator) a source project consumes directly is still
+  tracked to the test projects that reference that source project - but only when `Directory.Packages.props` is the
+  *only* changed file, only `Version` attributes actually changed (any other edit to the file, even alongside a
+  version bump, is treated as "beyond package versions" and not narrowed), and every solution project has been
+  restored; helper libraries with no test method are never selected, and a narrowed set that turns out to cover
+  every runnable test project runs the whole solution in one invocation instead. Any other case runs the whole
+  solution, with a note explaining why (git unavailable, the file doesn't parse, something beyond package versions
+  changed, an unrestored project, or no restored project uses those ids). Test projects with no
+  `obj/project.assets.json` (not restored) are called out in the note when the run falls back to whole test projects.
+
+### Fixed
+- `dotnet_test_affected`: a changed `.txt` or image inside a project folder (test data such as `TestData/expected.txt` or
+  Verify's `*.verified.txt`) was ignored, so nothing ran. It now selects that project's tests. `.md` files, and
+  documentation outside every project, are still ignored; a project at the solution root doesn't make docs count.
+
 ## [0.3.3] - 2026-09-24
 
 Prompted by an external evaluation; each claim was checked against the code first.

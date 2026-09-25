@@ -372,12 +372,14 @@ public sealed class TestRunner
     /// quoting and nothing can smuggle in extra arguments the way concatenating a single argument string would allow.
     /// </summary>
     internal static async Task<(int ExitCode, string Stdout, string Stderr, bool TimedOut)> RunProcessAsync(
-        string fileName, IReadOnlyList<string> arguments, CancellationToken ct, string? workingDirectory = null, TimeSpan? timeout = null)
+        string fileName, IReadOnlyList<string> arguments, CancellationToken ct, string? workingDirectory = null, TimeSpan? timeout = null,
+        System.Text.Encoding? outputEncoding = null)
     {
         var psi = new ProcessStartInfo(fileName)
         {
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
+            StandardOutputEncoding = outputEncoding,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
