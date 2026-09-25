@@ -162,6 +162,73 @@ public class AffectedTestFinderTests
         Assert.Equal([libATests], affected);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Selects_tests_of_every_in_scope_tfm_variant_of_a_changed_file(bool netStandardVariantFirst)
+    {
+        // Polly shape (RandomUtil): an internal class, seen through InternalsVisibleTo. Lib is multi-targeted, so its file exists once per TFM. Lib.Tests (net10.0) references Lib(net8.0);
+        // Legacy.Tests reaches Lib(netstandard2.0) through Legacy. Both Lib variants are in the search scope. Seeding the walk
+        // from whichever variant comes first found only that variant's dependents, and the order isn't stable.
+        var workspace = new AdhocWorkspace();
+        var corlib = MetadataReference.CreateFromFile(typeof(object).Assembly.Location);
+        var runtime = MetadataReference.CreateFromFile(Path.Combine(Path.GetDirectoryName(typeof(object).Assembly.Location)!, "System.Runtime.dll"));
+        var xunit = MetadataReference.CreateFromFile(typeof(FactAttribute).Assembly.Location);
+        var solution = workspace.CurrentSolution;
+        var libFile = Path.Combine(Root, "src", "Util.cs");
+        // Declarations sit on different lines per #if branch, as in Polly's RandomUtil.cs (Next is on line 9 or line 16).
+        const string libCode = """
+            [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Lib.Tests")]
+            [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Legacy")]
+            namespace Lib;
+            internal static class Util
+            {
+            #if NET
+                public static int N() => 1;
+            #else
+                private static readonly int Seed = 2;
+
+                public static int N() => Seed;
+            #endif
+            }
+            """;
+
+        ProjectId AddLib(string tfm)
+        {
+            var id = ProjectId.CreateNewId();
+            solution = solution
+                .AddProject(ProjectInfo.Create(id, VersionStamp.Default, $"Lib({tfm})", "Lib", LanguageNames.CSharp,
+                    filePath: Path.Combine(Root, "src", "Lib.csproj"), metadataReferences: [corlib, runtime],
+                    parseOptions: new Microsoft.CodeAnalysis.CSharp.CSharpParseOptions(preprocessorSymbols: tfm.StartsWith("net8") ? ["NET"] : [])))
+                .AddDocument(DocumentInfo.Create(DocumentId.CreateNewId(id), "Util.cs",
+                    loader: TextLoader.From(TextAndVersion.Create(SourceText.From(libCode), VersionStamp.Default)), filePath: libFile));
+            return id;
+        }
+        ProjectId AddProject(string name, string tfm, string dir, string code, ProjectId reference, bool isTest)
+        {
+            var id = ProjectId.CreateNewId();
+            solution = solution
+                .AddProject(ProjectInfo.Create(id, VersionStamp.Default, $"{name}({tfm})", name, LanguageNames.CSharp,
+                    filePath: Path.Combine(Root, dir, $"{name}.csproj"), metadataReferences: isTest ? [corlib, runtime, xunit] : [corlib, runtime]))
+                .AddProjectReference(id, new ProjectReference(reference))
+                .AddDocument(DocumentInfo.Create(DocumentId.CreateNewId(id), $"{name}.cs",
+                    loader: TextLoader.From(TextAndVersion.Create(SourceText.From(code), VersionStamp.Default)), filePath: Path.Combine(Root, dir, $"{name}.cs")));
+            return id;
+        }
+
+        ProjectId libNet8, libNs20;
+        if (netStandardVariantFirst) { libNs20 = AddLib("netstandard2.0"); libNet8 = AddLib("net8.0"); }
+        else { libNet8 = AddLib("net8.0"); libNs20 = AddLib("netstandard2.0"); }
+        AddProject("Lib.Tests", "net10.0", "test", "using Xunit; namespace Lib.Tests; public class T { [Fact] public void Direct() { _ = Lib.Util.N(); } }", libNet8, isTest: true);
+        var legacy = AddProject("Legacy", "netstandard2.0", "legacy", "namespace Legacy; public static class L { public static int M() => Lib.Util.N(); }", libNs20, isTest: false);
+        AddProject("Legacy.Tests", "net10.0", "legacytest", "using Xunit; namespace Legacy.Tests; public class T { [Fact] public void ViaLegacy() { _ = Legacy.L.M(); } }", legacy, isTest: true);
+
+        var affected = await AffectedTestFinder.FindAsync(solution, [libFile], maxDepth: 3, AffectedTestFinder.DefaultBudget, NullLogger.Instance, default);
+
+        Assert.True(affected.Complete);
+        Assert.Equal(["Legacy.Tests.T.ViaLegacy", "Lib.Tests.T.Direct"], affected.Tests.Select(t => t.FullyQualifiedName).Order());
+    }
+
     [Fact]
     public void Project_fallback_walks_every_tfm_variant_of_the_reference_graph()
     {
