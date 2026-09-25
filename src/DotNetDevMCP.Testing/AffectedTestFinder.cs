@@ -49,13 +49,18 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
         var totalTestMethods = await CountTestMethodsAsync(scope.Where(IsTestProject), callerCt);
 
         var found = new Dictionary<string, AffectedTest>(StringComparer.Ordinal);
-        var seen = new HashSet<string>(StringComparer.Ordinal); // by documentation id: the same method from another TFM is the same method
+        // Keyed per project variant. Roslyn's search from one TFM variant's symbol doesn't reliably reach the dependents of the
+        // other variants: #if branches put the same member on different lines (Polly's RandomUtil.cs, where the walk missed
+        // RandomUtilTests), and on Polly even keying only members of #if files per variant lost 32-62 tests on 3 of 40 commits.
+        // Per-variant keying for every member lost none and recovered 14 the old walk missed, at ~3x the selection time
+        // (median 0.8 s -> 2.8 s): correctness first. Only in-scope variants repeat. Tests are still reported once (Add).
+        var seen = new HashSet<(ProjectId, string)>();
         var frontier = new List<(ISymbol Symbol, string Via)>();
 
-        void Visit(ISymbol symbol, string via, string? projectPath, List<(ISymbol, string)> into)
+        void Visit(ISymbol symbol, string via, Project project, List<(ISymbol, string)> into)
         {
-            if (!seen.Add(Key(symbol))) return;
-            if (symbol is IMethodSymbol m && IsTestMethod(m)) Add(found, m, via, projectPath);
+            if (!seen.Add((project.Id, Key(symbol)))) return;
+            if (symbol is IMethodSymbol m && IsTestMethod(m)) Add(found, m, via, project.FilePath);
             else into.Add((symbol, via));
         }
 
@@ -67,17 +72,21 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
             {
                 var full = Path.GetFullPath(file);
                 var ids = solution.GetDocumentIdsWithFilePath(full);
-                var doc = solution.GetDocument(ids.FirstOrDefault(id => scope.Any(p => p.Id == id.ProjectId)) ?? ids.FirstOrDefault()!);
-                if (doc is null) continue;
-                var model = await doc.GetSemanticModelAsync(ct);
-                var root = await doc.GetSyntaxRootAsync(ct);
-                if (model is null || root is null) continue;
-
-                foreach (var decl in root.DescendantNodes().OfType<MemberDeclarationSyntax>())
+                // Every in-scope TFM variant of the file, not just the first: each variant's declarations (and #if branches)
+                // are what that variant's dependents reference.
+                var inScope = ids.Where(id => scope.Any(p => p.Id == id.ProjectId)).ToList();
+                foreach (var doc in (inScope.Count > 0 ? inScope : ids.Take(1)).Select(solution.GetDocument).OfType<Document>())
                 {
-                    foreach (var symbol in RunnableSymbols(decl, model, ct))
+                    var model = await doc.GetSemanticModelAsync(ct);
+                    var root = await doc.GetSyntaxRootAsync(ct);
+                    if (model is null || root is null) continue;
+
+                    foreach (var decl in root.DescendantNodes().OfType<MemberDeclarationSyntax>())
                     {
-                        Visit(symbol, Path.GetFileName(full), doc.Project.FilePath, frontier);
+                        foreach (var symbol in RunnableSymbols(decl, model, ct))
+                        {
+                            Visit(symbol, Path.GetFileName(full), doc.Project, frontier);
+                        }
                     }
                 }
             }
@@ -108,7 +117,7 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
                         if (member is null || model is null) continue;
                         foreach (var enclosing in RunnableSymbols(member, model, ct))
                         {
-                            Visit(enclosing, $"{via} -> {symbol.Name}", location.Document.Project.FilePath, next);
+                            Visit(enclosing, $"{via} -> {symbol.Name}", location.Document.Project, next);
                         }
                     }
                 }
