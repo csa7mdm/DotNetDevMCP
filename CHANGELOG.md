@@ -37,6 +37,12 @@ All notable changes to DotNetDevMCP are documented here. The format follows
   `obj/project.assets.json` (not restored) are called out in the note when the run falls back to whole test projects.
 
 ### Fixed
+- `dotnet_test_affected` could miss tests that call the changed code directly while reporting `selectionComplete: true`.
+  For a multi-targeted project, the walk started from one target framework's copy of the changed file and relied on Roslyn
+  to link it to the other copies, which it does by source position; `#if` branches put the same member on different lines,
+  so the link broke. Which copy came first wasn't stable, so the result varied between sessions (on Polly, a change to
+  `RandomUtil.cs` selected 121 tests in one session and 118 in another, missing `RandomUtilTests.Next_Ok`). The walk now
+  starts from every in-scope copy and tracks visited members per copy.
 - `dotnet_test_affected`: a changed `.txt` or image inside a project folder (test data such as `TestData/expected.txt` or
   Verify's `*.verified.txt`) was ignored, so nothing ran. It now selects that project's tests. `.md` files, and
   documentation outside every project, are still ignored; a project at the solution root doesn't make docs count.
