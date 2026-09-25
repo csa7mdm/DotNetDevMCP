@@ -49,9 +49,11 @@ public sealed class AffectedTestFinder(ISolutionManager solutions, ILogger<Affec
         var totalTestMethods = await CountTestMethodsAsync(scope.Where(IsTestProject), callerCt);
 
         var found = new Dictionary<string, AffectedTest>(StringComparer.Ordinal);
-        // Keyed per project variant: Roslyn links a symbol to its copies in other TFM variants of the same file by source
-        // position, and #if branches put the same member on different lines (Polly's RandomUtil.cs), so one variant's search
-        // can't stand in for another's. Only in-scope variants repeat, so the cost stays bounded. Tests are reported once (Add).
+        // Keyed per project variant. Roslyn's search from one TFM variant's symbol doesn't reliably reach the dependents of the
+        // other variants: #if branches put the same member on different lines (Polly's RandomUtil.cs, where the walk missed
+        // RandomUtilTests), and on Polly even keying only members of #if files per variant lost 32-62 tests on 3 of 40 commits.
+        // Per-variant keying for every member lost none and recovered 14 the old walk missed, at ~3x the selection time
+        // (median 0.8 s -> 2.8 s): correctness first. Only in-scope variants repeat. Tests are still reported once (Add).
         var seen = new HashSet<(ProjectId, string)>();
         var frontier = new List<(ISymbol Symbol, string Via)>();
 

@@ -42,7 +42,9 @@ All notable changes to DotNetDevMCP are documented here. The format follows
   to link it to the other copies, which it does by source position; `#if` branches put the same member on different lines,
   so the link broke. Which copy came first wasn't stable, so the result varied between sessions (on Polly, a change to
   `RandomUtil.cs` selected 121 tests in one session and 118 in another, missing `RandomUtilTests.Next_Ok`). The walk now
-  starts from every in-scope copy and tracks visited members per copy.
+  starts from every in-scope copy and tracks visited members per copy. On Polly's last 40 commits it lost no test and
+  recovered 14 the old walk missed; selection takes about three times longer on multi-targeted solutions (median
+  0.8 s to 2.8 s), so a few more broad changes fall back to running whole test projects within the 10 s budget.
 - `dotnet_test_affected`: a changed `.txt` or image inside a project folder (test data such as `TestData/expected.txt` or
   Verify's `*.verified.txt`) was ignored, so nothing ran. It now selects that project's tests. `.md` files, and
   documentation outside every project, are still ignored; a project at the solution root doesn't make docs count.
