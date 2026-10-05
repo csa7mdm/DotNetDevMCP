@@ -80,6 +80,12 @@ Things you can say to an agent with this server attached:
 - "Build the API and the worker projects at the same time, then run both test projects."
 - "Which projects have circular dependencies?"
 
+## Support development
+
+If DotNetDevMCP helps you work with .NET code, consider [sponsoring its development](https://github.com/sponsors/csa7mdm). Sponsorship supports maintenance, broader testing, and clearer documentation.
+
+Bug reports, reproducible examples, and contributions also help.
+
 ## Orchestration
 
 The tools above are individually useful. The orchestrator is what makes them fast. Any tool on the server can be dispatched by name, in parallel or as a dependency graph, from a single call:
