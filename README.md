@@ -226,4 +226,4 @@ Known gaps: `dotnet_test_affected` follows C# references only (no reflection, no
 
 ## Credits and license
 
-MIT. The code-intelligence module is a fork of [SharpTools](https://github.com/kooshi/SharpToolsMCP) by кɵɵѕнī, also MIT; see [LICENSE](https://github.com/csa7mdm/DotNetDevMCP/blob/main/LICENSE) and [ADR-001](https://github.com/csa7mdm/DotNetDevMCP/blob/main/docs/architecture/adr/001-fork-sharptools.md) for why it was forked rather than referenced.
+MIT. The code-intelligence module is a fork of [SharpTools](https://github.com/kooshi/SharpToolsMCP) by кɵɵѕнī, also MIT; see [LICENSE](https://github.com/csa7mdm/DotNetDevMCP/blob/main/LICENSE), [NOTICE](https://github.com/csa7mdm/DotNetDevMCP/blob/main/NOTICE) and [ADR-001](https://github.com/csa7mdm/DotNetDevMCP/blob/main/docs/architecture/adr/001-fork-sharptools.md) for why it was forked rather than referenced.

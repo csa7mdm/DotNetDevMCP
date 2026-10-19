@@ -1,0 +1,7 @@
+DotNetDevMCP
+Copyright (c) 2025 Ahmed Mustafa
+
+This project incorporates code from SharpTools
+(https://github.com/kooshi/SharpToolsMCP), copyright (c) 2025 кɵɵѕнī,
+licensed under the MIT License. The SharpTools-derived code lives in
+src/DotNetDevMCP.CodeIntelligence. Both copyright notices are kept in LICENSE.
