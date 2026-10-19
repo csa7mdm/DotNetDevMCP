@@ -3,6 +3,13 @@
 All notable changes to DotNetDevMCP are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- GitHub detected the license as "Other" because of the SharpTools attribution paragraph appended to `LICENSE`, so
+  tools that read GitHub's license field (package scanners, MCP directories, company license checks) reported it as
+  unknown. The paragraph moved to `NOTICE`; `LICENSE` is the plain MIT text with both copyright lines.
+
 ## [0.3.4] - 2026-09-25
 
 Wave 0 of the roadmap: a fix for missed tests on multi-targeted projects, NuGet package edges, `--http` hardening, a
